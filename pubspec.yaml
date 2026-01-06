@@ -1,4 +1,4 @@
-name: gridflow
+name: grid_flow
 description: "A powerful window management system for Flutter with smart snapping, dynamic window linking, and an infinite grid layout. Perfect for desktop-like web and app interfaces."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
