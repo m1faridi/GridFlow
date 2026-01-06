@@ -11,22 +11,40 @@ class DesktopApp {
   final IconData icon;
   final Color color;
   final Widget Function(String id)? contentBuilder;
-
-  // این همان چیزی است که می‌خواهید
-  // هر اپلیکیشنی که این مقدارش یکی باشد، به هم وصل می‌شوند
   final String? connectionTag;
 
   DesktopApp({
     required this.title,
     required this.icon,
-    required this.color,
+    Color? color, // ۱. این پارامتر را اختیاری کردیم (nullable)
     this.contentBuilder,
-    this.connectionTag, // <--- فیلد جدید
-  });
+    this.connectionTag,
+  }) : color = color ?? (connectionTag != null ? _generateColorFromTag(connectionTag) : Colors.blueGrey);
+  // ۲. در خط بالا گفتیم: اگر رنگ داده نشده بود، برو از روی تگ بساز. اگر تگ هم نبود، پیش‌فرض blueGrey بگذار.
+
+  /// تابع تولید رنگ ثابت و روشن بر اساس متن
+  static Color _generateColorFromTag(String tag) {
+    // تبدیل رشته به یک عدد هش ثابت
+    int hash = tag.hashCode;
+
+    // تعیین Hue (چرخه رنگ) بین ۰ تا ۳۶۰
+    double hue = (hash % 360).abs().toDouble();
+
+    // Saturation (غلیظ بودن رنگ):
+    // عدد ثابت ۰.۶۵ (۶۵٪) برای اینکه رنگ‌ها زنده باشند اما نه خیلی جیغ
+    double saturation = 0.65;
+
+    // Lightness (روشنایی):
+    // عدد ثابت ۰.۷۵ (۷۵٪) برای اینکه رنگ‌ها روشن (Pastel/Light) باشند
+    double lightness = 0.75;
+
+    // استفاده از HSL برای ساخت رنگ
+    return HSLColor.fromAHSL(1.0, hue, saturation, lightness).toColor();
+  }
 }
 
 class WindowItem {
-  final String id; // آیدی یونیک خود سیستم (دست نزنید)
+  final String id;
   final String? parentId;
   final String groupId;
   String title;
@@ -39,8 +57,6 @@ class WindowItem {
   bool isFocused;
   bool isMaximized;
   bool isMinimized;
-
-  // ذخیره تگ اتصال در پنجره باز شده
   final String? connectionTag;
 
   WindowItem({
@@ -57,6 +73,6 @@ class WindowItem {
     this.isFocused = true,
     this.isMaximized = false,
     this.isMinimized = false,
-    this.connectionTag, // <--- دریافت مقدار
+    this.connectionTag,
   });
 }
