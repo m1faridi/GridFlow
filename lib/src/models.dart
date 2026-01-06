@@ -6,23 +6,27 @@ enum SnapRegion {
   leftThird, centerThird, rightThird
 }
 
-/// مدل برای اپلیکیشن‌هایی که در نوار سمت چپ (لانچر) قرار می‌گیرند
 class DesktopApp {
   final String title;
   final IconData icon;
   final Color color;
-  final Widget Function(String id)? contentBuilder; // محتوای سفارشی
+  final Widget Function(String id)? contentBuilder;
+
+  // این همان چیزی است که می‌خواهید
+  // هر اپلیکیشنی که این مقدارش یکی باشد، به هم وصل می‌شوند
+  final String? connectionTag;
 
   DesktopApp({
     required this.title,
     required this.icon,
     required this.color,
     this.contentBuilder,
+    this.connectionTag, // <--- فیلد جدید
   });
 }
 
 class WindowItem {
-  final String id;
+  final String id; // آیدی یونیک خود سیستم (دست نزنید)
   final String? parentId;
   final String groupId;
   String title;
@@ -35,6 +39,9 @@ class WindowItem {
   bool isFocused;
   bool isMaximized;
   bool isMinimized;
+
+  // ذخیره تگ اتصال در پنجره باز شده
+  final String? connectionTag;
 
   WindowItem({
     required this.id,
@@ -50,5 +57,6 @@ class WindowItem {
     this.isFocused = true,
     this.isMaximized = false,
     this.isMinimized = false,
+    this.connectionTag, // <--- دریافت مقدار
   });
 }

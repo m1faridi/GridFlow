@@ -122,3 +122,20 @@ class DefaultWindowContent extends StatelessWidget {
     );
   }
 }
+class WindowScope extends InheritedWidget {
+  final String windowId;
+
+  const WindowScope({
+    super.key,
+    required this.windowId,
+    required super.child,
+  });
+
+  /// این متد جادویی است که آیدی پنجره فعلی را پیدا می‌کند
+  static String? of(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<WindowScope>()?.windowId;
+  }
+
+  @override
+  bool updateShouldNotify(WindowScope oldWidget) => windowId != oldWidget.windowId;
+}

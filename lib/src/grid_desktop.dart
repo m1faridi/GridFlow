@@ -5,8 +5,28 @@ import 'painters.dart';
 import 'window_widget.dart';
 import 'snap_overlays.dart';
 
+class DesktopProvider extends InheritedWidget {
+  final _GridDesktopState state;
+
+  const DesktopProvider({
+    super.key,
+    required this.state,
+    required super.child,
+  });
+
+  static DesktopProvider? of(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<DesktopProvider>();
+  }
+
+  void openApp(DesktopApp app, {String? parentId}) {
+    state.openApp(app, parentId: parentId);
+  }
+
+  @override
+  bool updateShouldNotify(DesktopProvider oldWidget) => false;
+}
+
 class GridDesktop extends StatefulWidget {
-  /// لیست اپلیکیشن‌هایی که در نوار ابزار (Taskbar) نمایش داده می‌شوند
   final List<DesktopApp> apps;
   final Widget? background;
 
@@ -20,10 +40,30 @@ class GridDesktop extends StatefulWidget {
   State<GridDesktop> createState() => _GridDesktopState();
 }
 
-class _GridDesktopState extends State<GridDesktop> {
+// تغییر ۱: اضافه کردن SingleTickerProviderStateMixin برای انیمیشن
+class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStateMixin {
   List<WindowItem> windows = [];
   SnapRegion activeSnapRegion = SnapRegion.none;
   bool _isDragging = false;
+
+  // کنترلر انیمیشن برای حرکت خطوط
+  late AnimationController _lineAnimationController;
+
+  @override
+  void initState() {
+    super.initState();
+    // این انیمیشن مدام از ۰ تا ۱ تکرار می‌شود تا خطوط حرکت کنند
+    _lineAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _lineAnimationController.dispose();
+    super.dispose();
+  }
 
   Rect _getSafeRect(Size screenSize, EdgeInsets padding) {
     return Rect.fromLTWH(
@@ -34,88 +74,145 @@ class _GridDesktopState extends State<GridDesktop> {
   }
 
   void openApp(DesktopApp app, {String? parentId}) {
-    // اگر اپلیکیشن محتوا نداشت، محتوای پیش‌فرض ایجاد کن
     _internalOpenWindow(
-        app.title,
-        app.icon,
-        app.color,
-        parentId: parentId,
-        customBodyBuilder: app.contentBuilder
+      app.title,
+      app.icon,
+      app.color,
+      parentId: parentId,
+      customBodyBuilder: app.contentBuilder,
+      connectionTag: app.connectionTag,
     );
   }
 
-  void _internalOpenWindow(String title, IconData icon, Color color, {String? parentId, Widget Function(String id)? customBodyBuilder}) {
+  void _internalOpenWindow(
+      String title,
+      IconData icon,
+      Color color,
+      {
+        String? parentId,
+        Widget Function(String id)? customBodyBuilder,
+        String? connectionTag,
+      }) {
     setState(() {
       final size = MediaQuery.of(context).size;
       final padding = MediaQuery.of(context).padding;
       final safeRect = _getSafeRect(size, padding);
+      final String newId = DateTime.now().toIso8601String();
+
       final bool isMobile = size.width < 700;
+      bool startMaximized = isMobile;
 
       WindowItem? parentWindow;
-      String currentGroupId;
-
       if (parentId != null) {
         try {
           parentWindow = windows.firstWhere((w) => w.id == parentId);
-          currentGroupId = parentWindow.groupId;
-        } catch (_) {
-          currentGroupId = DateTime.now().toIso8601String();
-        }
-      } else {
-        currentGroupId = DateTime.now().toIso8601String();
+          if (parentWindow.isMaximized) startMaximized = true;
+        } catch (_) {}
+      } else if (windows.isNotEmpty && windows.last.isMaximized) {
+        startMaximized = true;
+      }
+
+      double targetWidth = 360;
+      double targetHeight = 650;
+      WindowItem? referenceWindow = parentWindow ?? (windows.isNotEmpty ? windows.last : null);
+
+      if (referenceWindow != null) {
+        targetWidth = referenceWindow.rect.width;
+        targetHeight = referenceWindow.rect.height;
       }
 
       Rect startRect;
-      bool startMaximized = false;
-      const double offsetStep = 30.0;
+      Rect savedRect;
 
-      if (parentWindow != null) {
-        if (parentWindow.isMaximized) {
-          startRect = safeRect;
-          startMaximized = true;
-        } else {
-          startRect = parentWindow.rect.shift(const Offset(offsetStep, offsetStep));
-          startMaximized = false;
-          if (startRect.top > size.height - 100) {
-            startRect = Rect.fromLTWH(safeRect.left + 20, safeRect.top + 20, startRect.width, startRect.height);
+      if (startMaximized) {
+        startRect = safeRect;
+        savedRect = Rect.fromLTWH(safeRect.left + 40, safeRect.top + 40, targetWidth, targetHeight);
+      } else {
+        double startX = safeRect.left + 50;
+        double startY = safeRect.top + 50;
+        const double gap = 20.0;
+
+        if (referenceWindow != null) {
+          double potentialX = referenceWindow.rect.right + gap;
+          double potentialY = referenceWindow.rect.top;
+          if (potentialX + targetWidth <= safeRect.right) {
+            startX = potentialX;
+            startY = potentialY;
+          } else {
+            startX = safeRect.left + 50;
+            double nextLineY = referenceWindow.rect.bottom + gap;
+            if (nextLineY + targetHeight <= safeRect.bottom) {
+              startY = nextLineY;
+            } else {
+              startX = safeRect.left + 50;
+              startY = safeRect.top + 50;
+            }
           }
         }
-      } else {
-        startRect = Rect.fromLTWH(safeRect.left + 40, safeRect.top + 60, 340, 500);
-        if (isMobile) {
-          startRect = safeRect;
-          startMaximized = true;
-        }
+        startRect = Rect.fromLTWH(startX, startY, targetWidth, targetHeight);
+        savedRect = startRect;
       }
 
-      final String newId = DateTime.now().toIso8601String();
-      for (var w in windows) w.isFocused = false;
-
-      // ساخت محتوا
       Widget content;
       if (customBodyBuilder != null) {
         content = customBodyBuilder(newId);
       } else {
-        content = DefaultWindowContent(
-          title: title,
-          icon: icon,
-          color: color,
-          onOpenChild: () => _internalOpenWindow("Child of $title", Icons.subdirectory_arrow_right, color, parentId: newId),
+        content = Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Colors.white, color.withOpacity(0.05)],
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 40, color: color),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                title,
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey[800]),
+              ),
+              if (connectionTag != null) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text("Tag: $connectionTag", style: TextStyle(fontSize: 10, color: Colors.grey[600])),
+                ),
+              ]
+            ],
+          ),
         );
       }
 
       windows.add(WindowItem(
         id: newId,
         parentId: parentId,
-        groupId: currentGroupId,
+        groupId: "default",
         title: title,
         icon: icon,
         themeColor: color,
         rect: startRect,
-        savedRect: startMaximized ? Rect.fromLTWH(safeRect.left + 40, safeRect.top + 60, 340, 500) : startRect,
+        savedRect: savedRect,
+        isFocused: true,
         isMaximized: startMaximized,
         content: content,
+        connectionTag: connectionTag,
       ));
+
+      focusWindow(newId);
     });
   }
 
@@ -140,7 +237,7 @@ class _GridDesktopState extends State<GridDesktop> {
     setState(() {
       final window = windows[index];
       if (window.isMaximized) {
-        window.rect = window.savedRect ?? Rect.fromLTWH(safeRect.left + 40, safeRect.top + 60, 340, 500);
+        window.rect = window.savedRect ?? Rect.fromLTWH(safeRect.left + 50, safeRect.top + 50, 360, 650);
         window.isMaximized = false;
       } else {
         window.savedRect = window.rect;
@@ -157,7 +254,7 @@ class _GridDesktopState extends State<GridDesktop> {
     setState(() {
       final window = windows[index];
       if (window.isMinimized) {
-        window.rect = window.preMinRect ?? const Rect.fromLTWH(100, 100, 350, 500);
+        window.rect = window.preMinRect ?? const Rect.fromLTWH(100, 100, 360, 650);
         window.isMinimized = false;
         focusWindow(id);
       } else {
@@ -260,80 +357,77 @@ class _GridDesktopState extends State<GridDesktop> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      resizeToAvoidBottomInset: false,
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final desktopSize = Size(constraints.maxWidth, constraints.maxHeight);
-          final padding = MediaQuery.of(context).padding;
-          final safeRect = _getSafeRect(desktopSize, padding);
+    return DesktopProvider(
+      state: this,
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        resizeToAvoidBottomInset: false,
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            final desktopSize = Size(constraints.maxWidth, constraints.maxHeight);
+            final padding = MediaQuery.of(context).padding;
+            final safeRect = _getSafeRect(desktopSize, padding);
 
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              // Background
-              Positioned.fill(
-                child: widget.background ?? Container(
-                  color: const Color(0xFF1E1E1E),
-                  child: CustomPaint(painter: GridPatternPainter(), size: Size.infinite),
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned.fill(
+                  child: widget.background ?? Container(
+                    color: const Color(0xFF1E1E1E),
+                    child: CustomPaint(painter: GridPatternPainter(), size: Size.infinite),
+                  ),
                 ),
-              ),
-
-              // Launcher / Taskbar
-              Positioned(
-                top: padding.top + 50, left: 30,
-                child: Column(
-                  children: widget.apps.map((app) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 30),
-                      child: AppIconLauncher(
-                        label: app.title,
-                        icon: app.icon,
-                        color: app.color,
-                        onTap: () => openApp(app),
-                      ),
-                    );
-                  }).toList(),
+                Positioned(
+                  top: padding.top + 50, left: 30,
+                  child: Column(
+                    children: widget.apps.map((app) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 30),
+                        child: AppIconLauncher(
+                          label: app.title,
+                          icon: app.icon,
+                          color: app.color,
+                          onTap: () => openApp(app),
+                        ),
+                      );
+                    }).toList(),
+                  ),
                 ),
-              ),
-
-              // Connections
-              Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: ConnectionsPainter(windows)))),
-
-              // Snap Preview
-              if (activeSnapRegion != SnapRegion.none)
-                SnapPreviewOverlay(region: activeSnapRegion, screenSize: desktopSize, padding: padding),
-
-              // Windows
-              ...windows.map((window) {
-                if (window.isMaximized) window.rect = safeRect;
-                return FastWindow(
-                  key: ValueKey(window.id),
-                  window: window,
-                  desktopSize: desktopSize,
-                  padding: padding,
-                  onFocus: () => focusWindow(window.id),
-                  onClose: () => closeWindow(window.id),
-                  onMaximize: () => toggleMaximize(window.id, desktopSize, padding),
-                  onMinimize: () => toggleMinimize(window.id),
-                  onUpdate: (rect) => setState(() => window.rect = rect),
-                  onDragUpdate: (d) => onWindowDragUpdate(window.id, d, desktopSize, padding),
-                  onDragEnd: () => onWindowDragEnd(window.id, desktopSize, padding),
-                );
-              }),
-
-              // Snap Bar
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 250),
-                curve: Curves.easeOutBack,
-                top: _isDragging ? padding.top + 10 : -150,
-                left: 0, right: 0,
-                child: Center(child: StaticSnapBar(activeRegion: activeSnapRegion)),
-              ),
-            ],
-          );
-        },
+                // تغییر ۲: پاس دادن انیمیشن کنترلر به پینتر
+                Positioned.fill(child: IgnorePointer(
+                    child: CustomPaint(
+                        painter: ConnectionsPainter(windows, _lineAnimationController)
+                    )
+                )),
+                if (activeSnapRegion != SnapRegion.none)
+                  SnapPreviewOverlay(region: activeSnapRegion, screenSize: desktopSize, padding: padding),
+                ...windows.map((window) {
+                  if (window.isMaximized) window.rect = safeRect;
+                  return FastWindow(
+                    key: ValueKey(window.id),
+                    window: window,
+                    desktopSize: desktopSize,
+                    padding: padding,
+                    onFocus: () => focusWindow(window.id),
+                    onClose: () => closeWindow(window.id),
+                    onMaximize: () => toggleMaximize(window.id, desktopSize, padding),
+                    onMinimize: () => toggleMinimize(window.id),
+                    onUpdate: (rect) => setState(() => window.rect = rect),
+                    onDragUpdate: (d) => onWindowDragUpdate(window.id, d, desktopSize, padding),
+                    onDragEnd: () => onWindowDragEnd(window.id, desktopSize, padding),
+                  );
+                }),
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeOutBack,
+                  top: _isDragging ? padding.top + 10 : -150,
+                  left: 0, right: 0,
+                  child: Center(child: StaticSnapBar(activeRegion: activeSnapRegion)),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
