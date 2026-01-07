@@ -83,12 +83,12 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
   @override
   void didUpdateWidget(covariant GridDesktop oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.hasTitleBar != oldWidget.hasTitleBar || widget.isWindowMode != oldWidget.isWindowMode) {
 
-    // اگر تنظیمات کلی تغییر کرد، وضعیت پنجره‌های باز را آپدیت کن
-    if (widget.hasTitleBar != oldWidget.hasTitleBar) {
       setState(() {
         for (var window in windows) {
           window.hasTitleBar = widget.hasTitleBar;
+
         }
       });
     }
