@@ -42,9 +42,7 @@ class FastWindow extends StatelessWidget {
 
     return TransformableBox(
       rect: window.rect,
-      constraints: window.isMinimized
-          ? BoxConstraints.tight(const Size(220, 60))
-          : const BoxConstraints(minWidth: 200, minHeight: 150),
+      constraints: window.isMinimized ? BoxConstraints.tight(const Size(220, 60)) : const BoxConstraints(minWidth: 200, minHeight: 150),
       enabledHandles: canResize ? allHandles : {},
       visibleHandles: {}, // هندل‌های تغییر سایز همیشه نامرئی هستند
       handleAlignment: HandleAlignment.inside,
@@ -109,7 +107,7 @@ class FastWindow extends StatelessWidget {
                     color: (window.isFocused && !window.isMaximized)
                         ? Colors.blueAccent.withOpacity(0.3)
                         : Colors.transparent,
-                    width: 1.5
+                    width: 0
                 )
             ),
             clipBehavior: Clip.antiAlias,
@@ -192,7 +190,7 @@ class FastWindow extends StatelessWidget {
           top: 0,
           left: 0,
           right: 0,
-          height: 30, // ارتفاع ناحیه حساس برای جابجایی
+          height: 0, // ارتفاع ناحیه حساس برای جابجایی
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
             onTapDown: (_) { if (!window.isFocused) onFocus(); },
