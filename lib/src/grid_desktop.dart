@@ -5,6 +5,13 @@ import 'painters.dart';
 import 'window_widget.dart';
 import 'snap_overlays.dart';
 
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'models.dart';
+import 'painters.dart';
+import 'window_widget.dart';
+import 'snap_overlays.dart';
+
 class DesktopProvider extends InheritedWidget {
   final _GridDesktopState state;
 
@@ -30,7 +37,10 @@ class GridDesktop extends StatefulWidget {
   final List<DesktopApp> apps;
   final Widget? background;
   final List<DesktopApp>? autoStartApps;
+
+  // این دو پارامتر برای کنترل مود نمایش هستند
   final bool isWindowMode;
+  final bool hasTitleBar; // اضافه شد: کنترل مستقیم نوار عنوان
 
   const GridDesktop({
     super.key,
@@ -38,6 +48,7 @@ class GridDesktop extends StatefulWidget {
     this.background,
     this.autoStartApps,
     this.isWindowMode = false,
+    this.hasTitleBar = true, // مقدار پیش‌فرض true است
   });
 
   @override
@@ -73,13 +84,11 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
   void didUpdateWidget(covariant GridDesktop oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // اگر مود نمایش عوض شد
-    if (widget.isWindowMode != oldWidget.isWindowMode) {
+    // اگر تنظیمات کلی تغییر کرد، وضعیت پنجره‌های باز را آپدیت کن
+    if (widget.hasTitleBar != oldWidget.hasTitleBar) {
       setState(() {
         for (var window in windows) {
-          // فقط تایتل‌بار را تغییر می‌دهیم. 
-          // قابلیت بسته شدن (isClosable) را دستکاری نمی‌کنیم تا تنظیمات اپ حفظ شود.
-          window.hasTitleBar = !widget.isWindowMode;
+          window.hasTitleBar = widget.hasTitleBar;
         }
       });
     }
@@ -107,8 +116,9 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
       parentId: parentId,
       customBodyBuilder: app.contentBuilder,
       connectionTag: app.connectionTag,
-      // اصلاح ۱: مقدار isClosable را از اپ می‌گیریم و پاس می‌دهیم
       isClosable: app.isClosable,
+      // اگر اپلیکیشن خاصی تنظیم نکرده بود، از تنظیمات کلی دسکتاپ استفاده کن
+      appHasTitleBar: app.hasTitleBar,
     );
   }
 
@@ -120,14 +130,18 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
         String? parentId,
         Widget Function(String id)? customBodyBuilder,
         String? connectionTag,
-        // دریافت پارامتر
         bool isClosable = true,
+        bool appHasTitleBar = true, // دریافت تنظیمات خود اپ
       }) {
     setState(() {
       final size = MediaQuery.of(context).size;
       final padding = MediaQuery.of(context).padding;
       final safeRect = _getSafeRect(size, padding);
       final String newId = DateTime.now().toIso8601String();
+
+      // لاجیک: اگر GridDesktop بگوید تایتل‌بار نداشته باشیم (false)، اولویت با آن است.
+      // اگر GridDesktop بگوید true، آنگاه به تنظیمات خود App نگاه می‌کنیم.
+      final bool finalHasTitleBar = widget.hasTitleBar && appHasTitleBar;
 
       final bool isMobile = size.width < 700;
       bool startMaximized = isMobile;
@@ -211,17 +225,6 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
                 title,
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey[800]),
               ),
-              if (connectionTag != null) ...[
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text("Tag: $connectionTag", style: TextStyle(fontSize: 10, color: Colors.grey[600])),
-                ),
-              ]
             ],
           ),
         );
@@ -240,12 +243,9 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
         isMaximized: startMaximized,
         content: content,
         connectionTag: connectionTag,
-
-        // اصلاح ۲: استفاده از پارامتر ورودی به جای لاجیک اجباری
         isClosable: isClosable,
-
-        // تایتل‌بار همچنان وابسته به مود است (که درست است)
-        hasTitleBar: !widget.isWindowMode,
+        // تغییر مهم: استفاده از متغیر محاسبه شده به جای hardcode کردن
+        hasTitleBar: finalHasTitleBar,
       ));
 
       focusWindow(newId);
@@ -534,7 +534,7 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
     );
   }
 }
-
+// کلاس AppIconLauncher بدون تغییر باقی ماند
 class AppIconLauncher extends StatelessWidget {
   final String label; final IconData icon; final Color color; final VoidCallback onTap;
   const AppIconLauncher({super.key, required this.label, required this.icon, required this.color, required this.onTap});
