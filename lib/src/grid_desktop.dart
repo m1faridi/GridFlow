@@ -90,7 +90,8 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
         parentId: parentId,
         customBodyBuilder: app.contentBuilder,
         connectionTag: app.connectionTag,
-        isClosable: app.isClosable
+        isClosable: app.isClosable,
+        hasTitleBar: app.hasTitleBar // انتقال تنظیمات تایتل‌بار
     );
   }
 
@@ -103,6 +104,7 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
         Widget Function(String id)? customBodyBuilder,
         String? connectionTag,
         bool isClosable = true,
+        bool hasTitleBar = true, // پارامتر ورودی جدید
       }) {
     setState(() {
       final size = MediaQuery.of(context).size;
@@ -222,6 +224,7 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
         content: content,
         connectionTag: connectionTag,
         isClosable: isClosable,
+        hasTitleBar: hasTitleBar, // <--- این خط بسیار مهم است
       ));
 
       focusWindow(newId);

@@ -13,33 +13,23 @@ class DesktopApp {
   final Widget Function(String id)? contentBuilder;
   final String? connectionTag;
   final bool isClosable;
+  final bool hasTitleBar; // فیلد جدید برای تنظیم تایتل‌بار
+
   DesktopApp({
     required this.title,
     required this.icon,
-    Color? color, // ۱. این پارامتر را اختیاری کردیم (nullable)
+    Color? color,
     this.contentBuilder,
     this.connectionTag,
     this.isClosable = true,
+    this.hasTitleBar = true, // مقدار پیش‌فرض true است (یعنی تایتل‌بار دارد)
   }) : color = color ?? (connectionTag != null ? _generateColorFromTag(connectionTag) : Colors.blueGrey);
-  // ۲. در خط بالا گفتیم: اگر رنگ داده نشده بود، برو از روی تگ بساز. اگر تگ هم نبود، پیش‌فرض blueGrey بگذار.
 
-  /// تابع تولید رنگ ثابت و روشن بر اساس متن
   static Color _generateColorFromTag(String tag) {
-    // تبدیل رشته به یک عدد هش ثابت
     int hash = tag.hashCode;
-
-    // تعیین Hue (چرخه رنگ) بین ۰ تا ۳۶۰
     double hue = (hash % 360).abs().toDouble();
-
-    // Saturation (غلیظ بودن رنگ):
-    // عدد ثابت ۰.۶۵ (۶۵٪) برای اینکه رنگ‌ها زنده باشند اما نه خیلی جیغ
     double saturation = 0.65;
-
-    // Lightness (روشنایی):
-    // عدد ثابت ۰.۷۵ (۷۵٪) برای اینکه رنگ‌ها روشن (Pastel/Light) باشند
     double lightness = 0.75;
-
-    // استفاده از HSL برای ساخت رنگ
     return HSLColor.fromAHSL(1.0, hue, saturation, lightness).toColor();
   }
 }
@@ -60,6 +50,8 @@ class WindowItem {
   bool isMinimized;
   final String? connectionTag;
   final bool isClosable;
+  final bool hasTitleBar; // فیلد جدید در آیتم پنجره
+
   WindowItem({
     required this.id,
     this.parentId,
@@ -76,5 +68,6 @@ class WindowItem {
     this.isMinimized = false,
     this.connectionTag,
     this.isClosable = true,
+    this.hasTitleBar = true, // دریافت مقدار
   });
 }
