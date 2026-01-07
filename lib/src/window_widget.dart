@@ -73,7 +73,6 @@ class FastWindow extends StatelessWidget {
                     border: Border.all(color: window.themeColor, width: 2)
                 ),
                 child: Row(children: [
-                  Icon(window.icon, color: window.themeColor, size: 24),
                   const SizedBox(width: 10),
                   Expanded(
                       child: Text(
@@ -136,8 +135,7 @@ class FastWindow extends StatelessWidget {
             color: window.isFocused ? const Color(0xFFEFF2F9) : const Color(0xFFF7F7F7),
             padding: const EdgeInsets.symmetric(horizontal: 14),
             child: Row(children: [
-              Icon(window.icon, size: 16, color: window.themeColor),
-              const SizedBox(width: 10),
+
               Expanded(
                   child: Text(
                       window.title,
@@ -148,13 +146,13 @@ class FastWindow extends StatelessWidget {
                       )
                   )
               ),
-              IconButton(icon: const Icon(CupertinoIcons.minus, size: 18), onPressed: onMinimize),
+              IconButton(icon: Icon(CupertinoIcons.minus, size: 18,color: window.isFocused ? Colors.black87 : Colors.grey[500]), onPressed: onMinimize),
               IconButton(
-                  icon: Icon(window.isMaximized ? CupertinoIcons.arrow_down_right_arrow_up_left : CupertinoIcons.crop, size: 17),
+                  icon: Icon(window.isMaximized ? CupertinoIcons.arrow_down_right_arrow_up_left : CupertinoIcons.crop,color: window.isFocused ? Colors.black87 : Colors.grey[500], size: 17),
                   onPressed: onMaximize
               ),
               if (window.isClosable)
-                IconButton(icon: const Icon(CupertinoIcons.xmark, size: 18), onPressed: onClose)
+                IconButton(icon:  Icon(CupertinoIcons.xmark,color: window.isFocused ? Colors.black87 : Colors.grey[500], size: 18), onPressed: onClose)
             ])
         ),
       ),

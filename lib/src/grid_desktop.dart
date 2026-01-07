@@ -234,7 +234,6 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
         parentId: parentId,
         groupId: "default",
         title: title,
-        icon: icon,
         themeColor: color,
         rect: startRect,
         savedRect: savedRect,

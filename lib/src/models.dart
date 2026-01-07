@@ -39,7 +39,6 @@ class WindowItem {
   final String? parentId;
   final String groupId;
   String title;
-  IconData icon;
   Color themeColor;
   Widget content;
   Rect rect;
@@ -59,7 +58,6 @@ class WindowItem {
     this.parentId,
     required this.groupId,
     required this.title,
-    required this.icon,
     required this.themeColor,
     required this.content,
     required this.rect,
