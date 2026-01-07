@@ -8,7 +8,6 @@ enum SnapRegion {
 
 class DesktopApp {
   final String title;
-  final IconData icon;
   final Color color;
   final Widget Function(String id)? contentBuilder;
   final String? connectionTag;
@@ -18,7 +17,6 @@ class DesktopApp {
 
   DesktopApp({
     required this.title,
-    required this.icon,
     Color? color,
     this.contentBuilder,
     this.connectionTag,

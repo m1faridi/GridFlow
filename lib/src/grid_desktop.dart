@@ -111,7 +111,6 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
   void openApp(DesktopApp app, {String? parentId}) {
     _internalOpenWindow(
       app.title,
-      app.icon,
       app.color,
       parentId: parentId,
       customBodyBuilder: app.contentBuilder,
@@ -123,7 +122,6 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
 
   void _internalOpenWindow(
       String title,
-      IconData icon,
       Color color,
       {
         String? parentId,
@@ -211,15 +209,7 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, size: 40, color: color),
-              ),
-              const SizedBox(height: 12),
+
               Text(
                 title,
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey[800]),
@@ -474,7 +464,6 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
                         padding: const EdgeInsets.only(bottom: 30),
                         child: AppIconLauncher(
                           label: app.title,
-                          icon: app.icon,
                           color: app.color,
                           onTap: () => openApp(app),
                         ),
@@ -534,8 +523,11 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
 }
 // کلاس AppIconLauncher بدون تغییر باقی ماند
 class AppIconLauncher extends StatelessWidget {
-  final String label; final IconData icon; final Color color; final VoidCallback onTap;
-  const AppIconLauncher({super.key, required this.label, required this.icon, required this.color, required this.onTap});
+  final String label; final Color color; final VoidCallback onTap;
+  const AppIconLauncher({super.key, required this.label, required this.color, required this.onTap});
   @override
-  Widget build(BuildContext context) { return GestureDetector(onTap: onTap, child: Column(children: [Container(width: 60, height: 60, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(22), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 4))]), child: Icon(icon, color: Colors.white, size: 30)), const SizedBox(height: 8), Text(label, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500, shadows: [Shadow(blurRadius: 4)]))])); }
+  Widget build(BuildContext context) {
+    return GestureDetector(onTap: onTap, child:
+    Column(children: [
+      Text(label, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500, shadows: [Shadow(blurRadius: 4)]))])); }
 }
