@@ -74,7 +74,11 @@ class FastWindow extends StatelessWidget {
                 onPanStart: (_) => onFocus(),
                 onPanUpdate: onDragUpdate,
                 onPanEnd: (_) => onDragEnd(),
-                child: Container(height: 45, color: window.isFocused ? const Color(0xFFEFF2F9) : const Color(0xFFF7F7F7), padding: const EdgeInsets.symmetric(horizontal: 14), child: Row(children: [Icon(window.icon, size: 16, color: window.themeColor), const SizedBox(width: 10), Expanded(child: Text(window.title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: window.isFocused ? Colors.black87 : Colors.grey[500]))), IconButton(icon: const Icon(CupertinoIcons.minus, size: 18), onPressed: onMinimize), IconButton(icon: Icon(window.isMaximized ? CupertinoIcons.arrow_down_right_arrow_up_left : CupertinoIcons.crop, size: 17), onPressed: onMaximize), IconButton(icon: const Icon(CupertinoIcons.xmark, size: 18), onPressed: onClose)])),
+                child: Container(height: 45, color: window.isFocused ? const Color(0xFFEFF2F9) : const Color(0xFFF7F7F7), padding: const EdgeInsets.symmetric(horizontal: 14), child: Row(children: [Icon(window.icon, size: 16, color: window.themeColor), const SizedBox(width: 10), Expanded(child: Text(window.title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: window.isFocused ? Colors.black87 : Colors.grey[500]))),
+                  IconButton(icon: const Icon(CupertinoIcons.minus, size: 18), onPressed: onMinimize),
+                  IconButton(icon: Icon(window.isMaximized ? CupertinoIcons.arrow_down_right_arrow_up_left : CupertinoIcons.crop, size: 17), onPressed: onMaximize),
+                  if (window.isClosable)
+                  IconButton(icon: const Icon(CupertinoIcons.xmark, size: 18), onPressed: onClose)])),
               ),
               const Divider(height: 1, thickness: 0.5),
               Expanded(

@@ -12,13 +12,14 @@ class DesktopApp {
   final Color color;
   final Widget Function(String id)? contentBuilder;
   final String? connectionTag;
-
+  final bool isClosable;
   DesktopApp({
     required this.title,
     required this.icon,
     Color? color, // ۱. این پارامتر را اختیاری کردیم (nullable)
     this.contentBuilder,
     this.connectionTag,
+    this.isClosable = true,
   }) : color = color ?? (connectionTag != null ? _generateColorFromTag(connectionTag) : Colors.blueGrey);
   // ۲. در خط بالا گفتیم: اگر رنگ داده نشده بود، برو از روی تگ بساز. اگر تگ هم نبود، پیش‌فرض blueGrey بگذار.
 
@@ -58,7 +59,7 @@ class WindowItem {
   bool isMaximized;
   bool isMinimized;
   final String? connectionTag;
-
+  final bool isClosable;
   WindowItem({
     required this.id,
     this.parentId,
@@ -74,5 +75,6 @@ class WindowItem {
     this.isMaximized = false,
     this.isMinimized = false,
     this.connectionTag,
+    this.isClosable = true,
   });
 }

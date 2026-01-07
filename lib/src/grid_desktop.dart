@@ -29,11 +29,12 @@ class DesktopProvider extends InheritedWidget {
 class GridDesktop extends StatefulWidget {
   final List<DesktopApp> apps;
   final Widget? background;
-
+  final List<DesktopApp>? autoStartApps;
   const GridDesktop({
     super.key,
     required this.apps,
     this.background,
+    this.autoStartApps, // اضافه کردن به سازنده
   });
 
   @override
@@ -52,11 +53,21 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
-    // این انیمیشن مدام از ۰ تا ۱ تکرار می‌شود تا خطوط حرکت کنند
     _lineAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat();
+
+    // --- تغییر جدید: باز کردن برنامه‌های پیش‌فرض ---
+    // از addPostFrameCallback استفاده می‌کنیم چون برای باز کردن پنجره به سایز صفحه (MediaQuery) نیاز داریم
+    // و سایز صفحه در لحظه initState هنوز آماده نیست.
+    if (widget.autoStartApps != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        for (var app in widget.autoStartApps!) {
+          openApp(app);
+        }
+      });
+    }
   }
 
   @override
@@ -81,6 +92,7 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
       parentId: parentId,
       customBodyBuilder: app.contentBuilder,
       connectionTag: app.connectionTag,
+      isClosable: app.isClosable
     );
   }
 
@@ -92,6 +104,7 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
         String? parentId,
         Widget Function(String id)? customBodyBuilder,
         String? connectionTag,
+        bool isClosable = true,
       }) {
     setState(() {
       final size = MediaQuery.of(context).size;
@@ -210,6 +223,7 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
         isMaximized: startMaximized,
         content: content,
         connectionTag: connectionTag,
+        isClosable: isClosable,
       ));
 
       focusWindow(newId);
