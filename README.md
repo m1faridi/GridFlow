@@ -1,48 +1,123 @@
-# Grid Desktop for Flutter
-A high-performance, OS-like **window manager** for Flutter that enables **multi-window desktop experiences** inside a single app.  
-Build draggable, resizable, and snappable windows with **runtime window spawning**, **window grouping**, and **mobile ↔ desktop mode switching** — all rendered purely in Flutter.
+<p align="center">
+  <img 
+    src="https://raw.githubusercontent.com/m1faridi/GridFlow/refs/heads/main/example/assets/screenshots/Screenshot%202026-01-07%20at%2010.11.11%E2%80%AFPM.png"
+    width="900"
+    alt="GridFlow Desktop Window Manager"
+  />
+</p>
+
+# GridFlow – Desktop Window Manager for Flutter
+
+A high-performance, OS-like **window management framework** for Flutter that enables **multi-window desktop experiences** inside a single application.
+
+GridFlow allows you to build draggable, window-based UIs with **runtime window spawning**, **window grouping**, and **mobile ↔ desktop mode switching** — all rendered purely in Flutter with no native dependencies.
 
 ---
 
-## Highlights
+## ✨ Highlights
 
-- **Desktop / Window Mode Toggle**: switch between mobile layout and windowed desktop layout at runtime
-- **Multi-Window UI**: manage many independent windows on one screen
-- **Runtime Window Spawning**: open new windows from anywhere via `DesktopProvider`
-- **Window Grouping**: logically connect windows using `connectionTag` (e.g., audio system, pipeline stages)
-- **Parent–Child Windows**: open windows as children of a group or parent context
-- **Auto-Start Apps**: boot predefined windows automatically on launch
-- **Optional Title Bar**: enable/disable window chrome depending on your UX
-- **Platform-Agnostic**: Desktop, Web, Tablet, and large-screen Android/iOS
-- **Flutter-Native Rendering**: no platform channels, no native window manager dependency
+- **Desktop / Window Mode Toggle**  
+  Switch between mobile layout and windowed desktop layout at runtime
+
+- **Multi-Window UI**  
+  Manage multiple independent windows inside a single Flutter app
+
+- **Runtime Window Spawning**  
+  Open new windows programmatically from any widget using `DesktopProvider`
+
+- **Window Grouping**  
+  Logically connect related windows via `connectionTag`
+
+- **Parent–Child Windows**  
+  Spawn child windows linked to a specific group or parent workflow
+
+- **Auto-Start Applications**  
+  Launch predefined windows automatically when desktop mode starts
+
+- **Optional Title Bar**  
+  Enable or disable window chrome depending on UX requirements
+
+- **Platform-Agnostic**  
+  Works on Desktop, Web, Tablet, and large-screen Android/iOS
+
+- **Flutter-Native Rendering**  
+  No platform channels, no native window manager dependency
 
 ---
 
-## Why This Package
+## 🧠 Why GridFlow?
 
-Flutter excels at cross-platform UI, but building a true desktop-like, windowed experience (similar to an OS desktop) typically requires custom state management and heavy gesture/UI logic.
+Flutter excels at cross-platform UI, but implementing a **true desktop-style, windowed interface** usually requires complex gesture handling, layout coordination, and state management.
 
-This library provides a clean framework to:
-- build **Trading dashboards** with multiple panels/windows
-- create **Admin/Backoffice** tools with detachable views
-- implement **Professional editors** and **IDE-like** interfaces
-- support **Kiosk/Tablet** workflows that require multi-panel visibility
+GridFlow provides a clean and scalable abstraction for building:
+
+- 📈 Trading dashboards with multiple charts and panels  
+- 🛠 Admin / backoffice tools with detachable views  
+- 🧩 Professional editors and IDE-like interfaces  
+- 🖥 Kiosk and tablet applications requiring simultaneous panels  
 
 ---
 
-## Installation
+## 📦 Installation
 
-Add the package to your `pubspec.yaml` (replace with your repo package name):
+Add GridFlow to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  GridFlow: ^0.0.1
+  grid_flow:
+    git:
+      url: https://github.com/m1faridi/GridFlow.git
+Then run:
 
+bash
+Copy code
+flutter pub get
+🚀 Quick Start
+1️⃣ Create a Desktop Container
+dart
+Copy code
+GridDesktop(
+  isWindowMode: isWindowMode,
+  hasTitleBar: isWindowMode,
 
-Quick Start
-1) Create a Desktop Container
+  autoStartApps: [
+    DesktopApp(
+      title: "Auto App",
+      color: Colors.purple,
+      isClosable: false,
+      contentBuilder: (id) => const MyApp2(),
+    ),
+  ],
 
+  apps: [
+    DesktopApp(
+      title: "Camera Input",
+      color: Colors.blue,
+      connectionTag: "group_1",
+      contentBuilder: (id) => const MyApp2(),
+    ),
+    DesktopApp(
+      title: "Save Output",
+      color: Colors.green,
+      connectionTag: "group_2",
+    ),
+    DesktopApp(
+      title: "Music Player",
+      color: Colors.red,
+      connectionTag: "audio_system",
+    ),
+    DesktopApp(
+      title: "Equalizer",
+      color: Colors.orange,
+      connectionTag: "audio_system",
+    ),
+  ],
+)
+2️⃣ Open New Windows at Runtime (Child Windows)
+Any window can spawn new windows dynamically using DesktopProvider:
 
+dart
+Copy code
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -76,44 +151,3 @@ class MyApp2 extends StatelessWidget {
     );
   }
 }
-
-2) Open New Windows at Runtime (Child Windows)
-
-Any window can spawn new windows using DesktopProvider:
-
-
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
-
-class MyApp2 extends StatelessWidget {
-  const MyApp2({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.blueAccent,
-      body: Center(
-        child: ElevatedButton.icon(
-          icon: const Icon(CupertinoIcons.add_circled),
-          label: const Text("Open New Window"),
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          ),
-          onPressed: () {
-            DesktopProvider.of(context)?.openApp(
-              DesktopApp(
-                title: "Child Window",
-                color: Colors.teal,
-                connectionTag: "group_1",
-                contentBuilder: (id) => const MyApp2(),
-              ),
-              parentId: "group_1",
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-
