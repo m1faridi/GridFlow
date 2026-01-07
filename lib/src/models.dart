@@ -12,8 +12,10 @@ class DesktopApp {
   final Color color;
   final Widget Function(String id)? contentBuilder;
   final String? connectionTag;
+
+  // در کلاس App این‌ها می‌توانند final باشند چون فقط تنظیمات اولیه هستند
   final bool isClosable;
-  final bool hasTitleBar; // فیلد جدید برای تنظیم تایتل‌بار
+  final bool hasTitleBar;
 
   DesktopApp({
     required this.title,
@@ -22,7 +24,7 @@ class DesktopApp {
     this.contentBuilder,
     this.connectionTag,
     this.isClosable = true,
-    this.hasTitleBar = true, // مقدار پیش‌فرض true است (یعنی تایتل‌بار دارد)
+    this.hasTitleBar = true,
   }) : color = color ?? (connectionTag != null ? _generateColorFromTag(connectionTag) : Colors.blueGrey);
 
   static Color _generateColorFromTag(String tag) {
@@ -49,8 +51,10 @@ class WindowItem {
   bool isMaximized;
   bool isMinimized;
   final String? connectionTag;
-  final bool isClosable;
-  final bool hasTitleBar; // فیلد جدید در آیتم پنجره
+
+  // *** تغییر مهم: final را از دو خط زیر حذف کردم ***
+  bool isClosable;
+  bool hasTitleBar;
 
   WindowItem({
     required this.id,
@@ -67,7 +71,7 @@ class WindowItem {
     this.isMaximized = false,
     this.isMinimized = false,
     this.connectionTag,
-    this.isClosable = true,
-    this.hasTitleBar = true, // دریافت مقدار
+    this.isClosable = true,   // مقدار اولیه
+    this.hasTitleBar = true,  // مقدار اولیه
   });
 }

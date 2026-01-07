@@ -30,11 +30,14 @@ class GridDesktop extends StatefulWidget {
   final List<DesktopApp> apps;
   final Widget? background;
   final List<DesktopApp>? autoStartApps;
+  final bool isWindowMode;
+
   const GridDesktop({
     super.key,
     required this.apps,
     this.background,
     this.autoStartApps,
+    this.isWindowMode = false,
   });
 
   @override
@@ -45,8 +48,6 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
   List<WindowItem> windows = [];
   SnapRegion activeSnapRegion = SnapRegion.none;
   bool _isDragging = false;
-
-  // متغیر برای کنترل نمایش نوار اسنپ
   bool _showSnapBar = false;
 
   late AnimationController _lineAnimationController;
@@ -69,6 +70,22 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
   }
 
   @override
+  void didUpdateWidget(covariant GridDesktop oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // اگر مود نمایش عوض شد
+    if (widget.isWindowMode != oldWidget.isWindowMode) {
+      setState(() {
+        for (var window in windows) {
+          // فقط تایتل‌بار را تغییر می‌دهیم. 
+          // قابلیت بسته شدن (isClosable) را دستکاری نمی‌کنیم تا تنظیمات اپ حفظ شود.
+          window.hasTitleBar = !widget.isWindowMode;
+        }
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _lineAnimationController.dispose();
     super.dispose();
@@ -84,14 +101,14 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
 
   void openApp(DesktopApp app, {String? parentId}) {
     _internalOpenWindow(
-        app.title,
-        app.icon,
-        app.color,
-        parentId: parentId,
-        customBodyBuilder: app.contentBuilder,
-        connectionTag: app.connectionTag,
-        isClosable: app.isClosable,
-        hasTitleBar: app.hasTitleBar // انتقال تنظیمات تایتل‌بار
+      app.title,
+      app.icon,
+      app.color,
+      parentId: parentId,
+      customBodyBuilder: app.contentBuilder,
+      connectionTag: app.connectionTag,
+      // اصلاح ۱: مقدار isClosable را از اپ می‌گیریم و پاس می‌دهیم
+      isClosable: app.isClosable,
     );
   }
 
@@ -103,8 +120,8 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
         String? parentId,
         Widget Function(String id)? customBodyBuilder,
         String? connectionTag,
+        // دریافت پارامتر
         bool isClosable = true,
-        bool hasTitleBar = true, // پارامتر ورودی جدید
       }) {
     setState(() {
       final size = MediaQuery.of(context).size;
@@ -223,8 +240,12 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
         isMaximized: startMaximized,
         content: content,
         connectionTag: connectionTag,
+
+        // اصلاح ۲: استفاده از پارامتر ورودی به جای لاجیک اجباری
         isClosable: isClosable,
-        hasTitleBar: hasTitleBar, // <--- این خط بسیار مهم است
+
+        // تایتل‌بار همچنان وابسته به مود است (که درست است)
+        hasTitleBar: !widget.isWindowMode,
       ));
 
       focusWindow(newId);
@@ -281,7 +302,6 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
     });
   }
 
-  // --- متد اصلی مدیریت درگ و اسنپ ---
   void onWindowDragUpdate(String id, DragUpdateDetails details, Size screenSize, EdgeInsets padding) {
     final index = windows.indexWhere((w) => w.id == id);
     if (index == -1) return;
@@ -305,7 +325,6 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
     final bool isMobile = w < 700;
     bool shouldShowSnapBar = false;
 
-    // --- منطق نمایش نوار اسنپ (Trigger) ---
     if (isMobile) {
       if (dx < 30) {
         shouldShowSnapBar = true;
@@ -331,7 +350,6 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
     SnapRegion region = SnapRegion.none;
     bool onSnapBar = false;
 
-    // ۱. اگر نوار باز بود، چک کن روی نوار هستیم؟
     if (_showSnapBar) {
       if (isMobile) {
         double barHeight = 400;
@@ -367,32 +385,20 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
       }
     }
 
-    // ۲. اگر روی نوار نبودیم، از اسنپ‌های لبه‌ای (Invisible Snap Zones) استفاده کن
     if (!onSnapBar) {
-      // منطقه حساس گوشه‌ها (اولویت اول)
       const double cornerZone = 50.0;
-      // منطقه حساس لبه‌ها (اولویت دوم)
       const double edgeZone = 20.0;
 
-      // الف) گوشه‌ها
       if (dx < cornerZone && dy < cornerZone + padding.top) region = SnapRegion.topLeft;
       else if (dx > w - cornerZone && dy < cornerZone + padding.top) region = SnapRegion.topRight;
       else if (dx < cornerZone && dy > h - cornerZone) region = SnapRegion.bottomLeft;
       else if (dx > w - cornerZone && dy > h - cornerZone) region = SnapRegion.bottomRight;
-
-      // ب) سقف (اگر روی نوار نبود ولی چسبید به بالا)
       else if (!isMobile && dy < padding.top + 5) region = SnapRegion.top;
-
-      // ج) لبه‌ی پایین (تقسیم به ۳ قسمت)
       else if (dy > h - edgeZone) {
-        if (dx < w * 0.3) region = SnapRegion.leftThird;       // سمت چپ پایین
-        else if (dx > w * 0.7) region = SnapRegion.rightThird; // سمت راست پایین
-        else region = SnapRegion.centerThird;                  // وسط پایین
+        if (dx < w * 0.3) region = SnapRegion.leftThird;
+        else if (dx > w * 0.7) region = SnapRegion.rightThird;
+        else region = SnapRegion.centerThird;
       }
-
-      // د) لبه‌های چپ و راست (نصف شدن صفحه)
-      // نکته: اگر موبایل باشد، لبه چپ نوار را باز می‌کند پس اینجا اسنپ نمی‌کنیم
-      // اما اگر موبایل نباشد یا لبه راست باشد، اسنپ انجام می‌شود
       else if (dx < edgeZone && !isMobile) region = SnapRegion.left;
       else if (dx > w - edgeZone) region = SnapRegion.right;
     }
