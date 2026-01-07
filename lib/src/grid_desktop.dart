@@ -34,20 +34,21 @@ class GridDesktop extends StatefulWidget {
     super.key,
     required this.apps,
     this.background,
-    this.autoStartApps, // اضافه کردن به سازنده
+    this.autoStartApps,
   });
 
   @override
   State<GridDesktop> createState() => _GridDesktopState();
 }
 
-// تغییر ۱: اضافه کردن SingleTickerProviderStateMixin برای انیمیشن
 class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStateMixin {
   List<WindowItem> windows = [];
   SnapRegion activeSnapRegion = SnapRegion.none;
   bool _isDragging = false;
 
-  // کنترلر انیمیشن برای حرکت خطوط
+  // متغیر برای کنترل نمایش نوار اسنپ
+  bool _showSnapBar = false;
+
   late AnimationController _lineAnimationController;
 
   @override
@@ -58,9 +59,6 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
       duration: const Duration(seconds: 2),
     )..repeat();
 
-    // --- تغییر جدید: باز کردن برنامه‌های پیش‌فرض ---
-    // از addPostFrameCallback استفاده می‌کنیم چون برای باز کردن پنجره به سایز صفحه (MediaQuery) نیاز داریم
-    // و سایز صفحه در لحظه initState هنوز آماده نیست.
     if (widget.autoStartApps != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         for (var app in widget.autoStartApps!) {
@@ -86,13 +84,13 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
 
   void openApp(DesktopApp app, {String? parentId}) {
     _internalOpenWindow(
-      app.title,
-      app.icon,
-      app.color,
-      parentId: parentId,
-      customBodyBuilder: app.contentBuilder,
-      connectionTag: app.connectionTag,
-      isClosable: app.isClosable
+        app.title,
+        app.icon,
+        app.color,
+        parentId: parentId,
+        customBodyBuilder: app.contentBuilder,
+        connectionTag: app.connectionTag,
+        isClosable: app.isClosable
     );
   }
 
@@ -280,6 +278,7 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
     });
   }
 
+  // --- متد اصلی مدیریت درگ و اسنپ ---
   void onWindowDragUpdate(String id, DragUpdateDetails details, Size screenSize, EdgeInsets padding) {
     final index = windows.indexWhere((w) => w.id == id);
     if (index == -1) return;
@@ -300,47 +299,114 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
     final double w = screenSize.width;
     final double h = screenSize.height;
 
-    SnapRegion region = SnapRegion.none;
-    const double cornerZone = 80.0;
-    const double edgeZone = 20.0;
-    double centerX = w / 2;
-    double barWidth = 360;
-    double barStart = centerX - (barWidth / 2);
-    double barEnd = centerX + (barWidth / 2);
-    bool onSnapBar = dx > barStart && dx < barEnd && dy > padding.top && dy < padding.top + 80;
+    final bool isMobile = w < 700;
+    bool shouldShowSnapBar = false;
 
-    if (dx < cornerZone && dy < cornerZone + padding.top) region = SnapRegion.topLeft;
-    else if (dx > w - cornerZone && dy < cornerZone + padding.top) region = SnapRegion.topRight;
-    else if (dx < cornerZone && dy > h - cornerZone) region = SnapRegion.bottomLeft;
-    else if (dx > w - cornerZone && dy > h - cornerZone) region = SnapRegion.bottomRight;
-    else if (onSnapBar) {
-      double relX = dx - barStart;
-      if (relX < 50) region = SnapRegion.left;
-      else if (relX < 100) region = SnapRegion.right;
-      else if (relX < 120) region = SnapRegion.none;
-      else if (relX < 170) region = SnapRegion.leftThird;
-      else if (relX < 220) region = SnapRegion.centerThird;
-      else if (relX < 270) region = SnapRegion.rightThird;
-      else if (relX < 290) region = SnapRegion.none;
-      else region = SnapRegion.top;
+    // --- منطق نمایش نوار اسنپ (Trigger) ---
+    if (isMobile) {
+      if (dx < 30) {
+        shouldShowSnapBar = true;
+      } else if (_showSnapBar && dx > 120) {
+        shouldShowSnapBar = false;
+      } else {
+        shouldShowSnapBar = _showSnapBar;
+      }
+    } else {
+      if (dy < padding.top + 10) {
+        shouldShowSnapBar = true;
+      } else if (_showSnapBar && dy > padding.top + 150) {
+        shouldShowSnapBar = false;
+      } else {
+        shouldShowSnapBar = _showSnapBar;
+      }
     }
-    else if (dy < padding.top + 10) {
-      region = SnapRegion.top;
+
+    if (_showSnapBar != shouldShowSnapBar) {
+      setState(() => _showSnapBar = shouldShowSnapBar);
     }
-    else {
-      if (dx < edgeZone) region = SnapRegion.left;
+
+    SnapRegion region = SnapRegion.none;
+    bool onSnapBar = false;
+
+    // ۱. اگر نوار باز بود، چک کن روی نوار هستیم؟
+    if (_showSnapBar) {
+      if (isMobile) {
+        double barHeight = 400;
+        double barTop = (h / 2) - (barHeight / 2);
+        if (dx < 80 && dy > barTop && dy < barTop + barHeight) {
+          onSnapBar = true;
+          double relY = dy - barTop;
+          if (relY < 50) region = SnapRegion.left;
+          else if (relY < 100) region = SnapRegion.right;
+          else if (relY < 130) region = SnapRegion.none;
+          else if (relY < 180) region = SnapRegion.leftThird;
+          else if (relY < 230) region = SnapRegion.centerThird;
+          else if (relY < 280) region = SnapRegion.rightThird;
+          else if (relY < 310) region = SnapRegion.none;
+          else region = SnapRegion.top;
+        }
+      } else {
+        double centerX = w / 2;
+        double barWidth = 360;
+        double barStart = centerX - (barWidth / 2);
+        if (dy < padding.top + 100 && dx > barStart && dx < barStart + barWidth) {
+          onSnapBar = true;
+          double relX = dx - barStart;
+          if (relX < 50) region = SnapRegion.left;
+          else if (relX < 100) region = SnapRegion.right;
+          else if (relX < 120) region = SnapRegion.none;
+          else if (relX < 170) region = SnapRegion.leftThird;
+          else if (relX < 220) region = SnapRegion.centerThird;
+          else if (relX < 270) region = SnapRegion.rightThird;
+          else if (relX < 290) region = SnapRegion.none;
+          else region = SnapRegion.top;
+        }
+      }
+    }
+
+    // ۲. اگر روی نوار نبودیم، از اسنپ‌های لبه‌ای (Invisible Snap Zones) استفاده کن
+    if (!onSnapBar) {
+      // منطقه حساس گوشه‌ها (اولویت اول)
+      const double cornerZone = 50.0;
+      // منطقه حساس لبه‌ها (اولویت دوم)
+      const double edgeZone = 20.0;
+
+      // الف) گوشه‌ها
+      if (dx < cornerZone && dy < cornerZone + padding.top) region = SnapRegion.topLeft;
+      else if (dx > w - cornerZone && dy < cornerZone + padding.top) region = SnapRegion.topRight;
+      else if (dx < cornerZone && dy > h - cornerZone) region = SnapRegion.bottomLeft;
+      else if (dx > w - cornerZone && dy > h - cornerZone) region = SnapRegion.bottomRight;
+
+      // ب) سقف (اگر روی نوار نبود ولی چسبید به بالا)
+      else if (!isMobile && dy < padding.top + 5) region = SnapRegion.top;
+
+      // ج) لبه‌ی پایین (تقسیم به ۳ قسمت)
+      else if (dy > h - edgeZone) {
+        if (dx < w * 0.3) region = SnapRegion.leftThird;       // سمت چپ پایین
+        else if (dx > w * 0.7) region = SnapRegion.rightThird; // سمت راست پایین
+        else region = SnapRegion.centerThird;                  // وسط پایین
+      }
+
+      // د) لبه‌های چپ و راست (نصف شدن صفحه)
+      // نکته: اگر موبایل باشد، لبه چپ نوار را باز می‌کند پس اینجا اسنپ نمی‌کنیم
+      // اما اگر موبایل نباشد یا لبه راست باشد، اسنپ انجام می‌شود
+      else if (dx < edgeZone && !isMobile) region = SnapRegion.left;
       else if (dx > w - edgeZone) region = SnapRegion.right;
-      else if (dy > h - edgeZone) region = SnapRegion.centerThird;
     }
 
     if (activeSnapRegion != region) setState(() => activeSnapRegion = region);
   }
 
   void onWindowDragEnd(String id, Size screenSize, EdgeInsets padding) {
-    setState(() => _isDragging = false);
+    setState(() {
+      _isDragging = false;
+      _showSnapBar = false;
+    });
+
     if (activeSnapRegion == SnapRegion.none) return;
     final index = windows.indexWhere((w) => w.id == id);
     if (index == -1) return;
+
     setState(() {
       final window = windows[index];
       window.savedRect = window.rect;
@@ -352,6 +418,7 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
       final hh = safeH/2;
       final tw = safeW/3;
       if (window.isMinimized) window.isMinimized = false;
+
       switch (activeSnapRegion) {
         case SnapRegion.left: window.rect = Rect.fromLTWH(startX, startY, hw, safeH); window.isMaximized = false; break;
         case SnapRegion.right: window.rect = Rect.fromLTWH(startX + hw, startY, hw, safeH); window.isMaximized = false; break;
@@ -381,6 +448,7 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
             final desktopSize = Size(constraints.maxWidth, constraints.maxHeight);
             final padding = MediaQuery.of(context).padding;
             final safeRect = _getSafeRect(desktopSize, padding);
+            final bool isMobile = desktopSize.width < 700;
 
             return Stack(
               fit: StackFit.expand,
@@ -407,7 +475,6 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
                     }).toList(),
                   ),
                 ),
-                // تغییر ۲: پاس دادن انیمیشن کنترلر به پینتر
                 Positioned.fill(child: IgnorePointer(
                     child: CustomPaint(
                         painter: ConnectionsPainter(windows, _lineAnimationController)
@@ -431,12 +498,24 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
                     onDragEnd: () => onWindowDragEnd(window.id, desktopSize, padding),
                   );
                 }),
+
                 AnimatedPositioned(
-                  duration: const Duration(milliseconds: 250),
+                  duration: const Duration(milliseconds: 300),
                   curve: Curves.easeOutBack,
-                  top: _isDragging ? padding.top + 10 : -150,
-                  left: 0, right: 0,
-                  child: Center(child: StaticSnapBar(activeRegion: activeSnapRegion)),
+                  top: isMobile
+                      ? 0
+                      : (_isDragging && _showSnapBar ? padding.top + 10 : -150),
+                  bottom: isMobile ? 0 : null,
+                  left: isMobile
+                      ? (_isDragging && _showSnapBar ? 10 : -90)
+                      : 0,
+                  right: isMobile ? null : 0,
+                  child: Center(
+                    child: StaticSnapBar(
+                      activeRegion: activeSnapRegion,
+                      isVertical: isMobile,
+                    ),
+                  ),
                 ),
               ],
             );
