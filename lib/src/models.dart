@@ -15,7 +15,6 @@ class DesktopApp {
 
   // در کلاس App این‌ها می‌توانند final باشند چون فقط تنظیمات اولیه هستند
   final bool isClosable;
-  final bool hasTitleBar;
 
   DesktopApp({
     required this.title,
@@ -24,7 +23,6 @@ class DesktopApp {
     this.contentBuilder,
     this.connectionTag,
     this.isClosable = true,
-    this.hasTitleBar = true,
   }) : color = color ?? (connectionTag != null ? _generateColorFromTag(connectionTag) : Colors.blueGrey);
 
   static Color _generateColorFromTag(String tag) {

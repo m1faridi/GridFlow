@@ -118,7 +118,6 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
       connectionTag: app.connectionTag,
       isClosable: app.isClosable,
       // اگر اپلیکیشن خاصی تنظیم نکرده بود، از تنظیمات کلی دسکتاپ استفاده کن
-      appHasTitleBar: app.hasTitleBar,
     );
   }
 
