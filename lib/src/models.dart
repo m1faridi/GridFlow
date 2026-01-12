@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async'; // اضافه شد برای استفاده از Completer
 
 enum SnapRegion {
   none, left, right, top,
@@ -11,8 +12,6 @@ class DesktopApp {
   final Color color;
   final Widget Function(String id)? contentBuilder;
   final String? connectionTag;
-
-  // در کلاس App این‌ها می‌توانند final باشند چون فقط تنظیمات اولیه هستند
   final bool isClosable;
 
   DesktopApp({
@@ -46,10 +45,11 @@ class WindowItem {
   bool isMaximized;
   bool isMinimized;
   final String? connectionTag;
-
-  // *** تغییر مهم: final را از دو خط زیر حذف کردم ***
   bool isClosable;
   bool hasTitleBar;
+
+  // اضافه شد: برای مدیریت بازگشت نتیجه (await)
+  final Completer<dynamic>? completer;
 
   WindowItem({
     required this.id,
@@ -65,7 +65,8 @@ class WindowItem {
     this.isMaximized = false,
     this.isMinimized = false,
     this.connectionTag,
-    this.isClosable = true,   // مقدار اولیه
-    this.hasTitleBar = true,  // مقدار اولیه
+    this.isClosable = true,
+    this.hasTitleBar = true,
+    this.completer, // اضافه شد به سازنده
   });
 }

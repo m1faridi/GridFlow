@@ -1,10 +1,4 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'models.dart';
-import 'painters.dart';
-import 'window_widget.dart';
-import 'snap_overlays.dart';
-
+import 'dart:async'; // اضافه شد
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'models.dart';
@@ -25,8 +19,14 @@ class DesktopProvider extends InheritedWidget {
     return context.dependOnInheritedWidgetOfExactType<DesktopProvider>();
   }
 
-  void openApp(DesktopApp app, {String? parentId}) {
-    state.openApp(app, parentId: parentId);
+  // تغییر: خروجی Future شد
+  Future<dynamic> openApp(DesktopApp app, {String? parentId}) {
+    return state.openApp(app, parentId: parentId);
+  }
+
+  // متد جدید: برای بستن پنجره و ارسال نتیجه از داخل ویجت فرزند
+  void closeApp(String id, [dynamic result]) {
+    state.closeWindow(id, result);
   }
 
   @override
@@ -37,10 +37,8 @@ class GridDesktop extends StatefulWidget {
   final List<DesktopApp> apps;
   final Widget? background;
   final List<DesktopApp>? autoStartApps;
-
-  // این دو پارامتر برای کنترل مود نمایش هستند
   final bool isWindowMode;
-  final bool hasTitleBar; // اضافه شد: کنترل مستقیم نوار عنوان
+  final bool hasTitleBar;
 
   const GridDesktop({
     super.key,
@@ -48,7 +46,7 @@ class GridDesktop extends StatefulWidget {
     this.background,
     this.autoStartApps,
     this.isWindowMode = false,
-    this.hasTitleBar = true, // مقدار پیش‌فرض true است
+    this.hasTitleBar = true,
   });
 
   @override
@@ -84,11 +82,9 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
   void didUpdateWidget(covariant GridDesktop oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.hasTitleBar != oldWidget.hasTitleBar || widget.isWindowMode != oldWidget.isWindowMode) {
-
       setState(() {
         for (var window in windows) {
           window.hasTitleBar = widget.hasTitleBar;
-
         }
       });
     }
@@ -108,19 +104,20 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
     );
   }
 
-  void openApp(DesktopApp app, {String? parentId}) {
-    _internalOpenWindow(
+  // تغییر: خروجی Future شد
+  Future<dynamic> openApp(DesktopApp app, {String? parentId}) {
+    return _internalOpenWindow(
       app.title,
       app.color,
       parentId: parentId,
       customBodyBuilder: app.contentBuilder,
       connectionTag: app.connectionTag,
       isClosable: app.isClosable,
-      // اگر اپلیکیشن خاصی تنظیم نکرده بود، از تنظیمات کلی دسکتاپ استفاده کن
     );
   }
 
-  void _internalOpenWindow(
+  // تغییر: خروجی Future شد
+  Future<dynamic> _internalOpenWindow(
       String title,
       Color color,
       {
@@ -128,16 +125,18 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
         Widget Function(String id)? customBodyBuilder,
         String? connectionTag,
         bool isClosable = true,
-        bool appHasTitleBar = true, // دریافت تنظیمات خود اپ
+        bool appHasTitleBar = true,
       }) {
+
+    // ۱. ساخت Completer
+    final completer = Completer<dynamic>();
+
     setState(() {
       final size = MediaQuery.of(context).size;
       final padding = MediaQuery.of(context).padding;
       final safeRect = _getSafeRect(size, padding);
       final String newId = DateTime.now().toIso8601String();
 
-      // لاجیک: اگر GridDesktop بگوید تایتل‌بار نداشته باشیم (false)، اولویت با آن است.
-      // اگر GridDesktop بگوید true، آنگاه به تنظیمات خود App نگاه می‌کنیم.
       final bool finalHasTitleBar = widget.hasTitleBar && appHasTitleBar;
 
       final bool isMobile = size.width < 700;
@@ -209,7 +208,6 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-
               Text(
                 title,
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey[800]),
@@ -232,15 +230,31 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
         content: content,
         connectionTag: connectionTag,
         isClosable: isClosable,
-        // تغییر مهم: استفاده از متغیر محاسبه شده به جای hardcode کردن
         hasTitleBar: finalHasTitleBar,
+        completer: completer, // ۲. اتصال Completer به پنجره
       ));
 
       focusWindow(newId);
     });
+
+    // ۳. بازگرداندن فیوچر
+    return completer.future;
   }
 
-  void closeWindow(String id) => setState(() => windows.removeWhere((w) => w.id == id));
+  // تغییر: اضافه شدن result اختیاری
+  void closeWindow(String id, [dynamic result]) {
+    final index = windows.indexWhere((w) => w.id == id);
+    if (index != -1) {
+      final window = windows[index];
+
+      // اگر کسی منتظر بسته شدن است، نتیجه را ارسال کن
+      if (window.completer != null && !window.completer!.isCompleted) {
+        window.completer!.complete(result);
+      }
+
+      setState(() => windows.removeAt(index));
+    }
+  }
 
   void focusWindow(String id) {
     final index = windows.indexWhere((w) => w.id == id);
@@ -486,6 +500,7 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
                     desktopSize: desktopSize,
                     padding: padding,
                     onFocus: () => focusWindow(window.id),
+                    // اینجا تغییر نیازی ندارد چون متد closeWindow بدون آرگومان هم کار می‌کند (result = null)
                     onClose: () => closeWindow(window.id),
                     onMaximize: () => toggleMaximize(window.id, desktopSize, padding),
                     onMinimize: () => toggleMinimize(window.id),
@@ -521,7 +536,7 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
     );
   }
 }
-// کلاس AppIconLauncher بدون تغییر باقی ماند
+
 class AppIconLauncher extends StatelessWidget {
   final String label; final Color color; final VoidCallback onTap;
   const AppIconLauncher({super.key, required this.label, required this.color, required this.onTap});
