@@ -151,3 +151,24 @@ class MyApp2 extends StatelessWidget {
     );
   }
 }
+
+
+
+
+sample:await ->
+
+var result = await DesktopProvider.of(context)?.openApp(
+    DesktopApp(
+      title: "Child Window",
+      color: Colors.teal,
+      connectionTag: "group_1",
+      contentBuilder: (id) => MyApp2(),
+    ),
+    parentId: "group_1", 
+  );
+  
+  print("پنجره بسته شد! نتیجه: $result");
+  --------
+
+  final myId = WindowScope.of(context)!;
+  DesktopProvider.of(context)?.closeApp(myId, "نتیجه عملیات موفقیت آمیز بود");
