@@ -165,9 +165,9 @@ var result = await DesktopProvider.of(context)?.openApp(
     ),
     parentId: "group_1", 
   );
-  
+  یی
   print("پنجره بسته شد! نتیجه: $result");
   --------
+  رشقبیبشسیب 
+        DesktopProvider.of(context)?.closeApp(back);
 
-  final myId = WindowScope.of(context)!;
-  DesktopProvider.of(context)?.closeApp(myId, "نتیجه عملیات موفقیت آمیز بود");
