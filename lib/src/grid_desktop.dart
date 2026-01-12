@@ -1,4 +1,4 @@
-import 'dart:async'; // اضافه شد
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'models.dart';
@@ -6,6 +6,34 @@ import 'painters.dart';
 import 'window_widget.dart';
 import 'snap_overlays.dart';
 
+/// یک Handle که هم state را دارد هم context مربوط به caller.
+/// نتیجه: DesktopProvider.of(context)?.closeApp(true) دقیقاً مثل Navigator.pop(result)
+class DesktopHandle {
+  final _GridDesktopState _state;
+  final BuildContext _ctx;
+
+  DesktopHandle._(this._state, this._ctx);
+
+  Future<dynamic> openApp(DesktopApp app, {String? parentId}) {
+    return _state.openApp(app, parentId: parentId);
+  }
+
+  void closeApp(dynamic result) {
+    final id = WindowScope.of(_ctx);
+    if (id == null) {
+      // اگر اینجا null است یعنی محتوای پنجره زیر WindowScope نیست
+      // یا context مربوط به دسکتاپ نیست.
+      debugPrint('[DesktopProvider] closeApp failed: WindowScope is null');
+      return;
+    }
+    _state.closeWindow(id, result);
+  }
+
+  // اگر جایی هنوز close با id لازم داشتی:
+  void closeById(String id, [dynamic result]) => _state.closeWindow(id, result);
+}
+
+/// Provider اصلی
 class DesktopProvider extends InheritedWidget {
   final _GridDesktopState state;
 
@@ -15,18 +43,10 @@ class DesktopProvider extends InheritedWidget {
     required super.child,
   });
 
-  static DesktopProvider? of(BuildContext context) {
-    return context.dependOnInheritedWidgetOfExactType<DesktopProvider>();
-  }
-
-  // تغییر: خروجی Future شد
-  Future<dynamic> openApp(DesktopApp app, {String? parentId}) {
-    return state.openApp(app, parentId: parentId);
-  }
-
-  // متد جدید: برای بستن پنجره و ارسال نتیجه از داخل ویجت فرزند
-  void closeApp(String id, [dynamic result]) {
-    state.closeWindow(id, result);
+  static DesktopHandle? of(BuildContext context) {
+    final provider = context.dependOnInheritedWidgetOfExactType<DesktopProvider>();
+    if (provider == null) return null;
+    return DesktopHandle._(provider.state, context);
   }
 
   @override
@@ -98,13 +118,13 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
 
   Rect _getSafeRect(Size screenSize, EdgeInsets padding) {
     return Rect.fromLTWH(
-      padding.left, padding.top,
+      padding.left,
+      padding.top,
       screenSize.width - padding.left - padding.right,
       screenSize.height - padding.top - padding.bottom,
     );
   }
 
-  // تغییر: خروجی Future شد
   Future<dynamic> openApp(DesktopApp app, {String? parentId}) {
     return _internalOpenWindow(
       app.title,
@@ -116,19 +136,15 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
     );
   }
 
-  // تغییر: خروجی Future شد
   Future<dynamic> _internalOpenWindow(
       String title,
-      Color color,
-      {
+      Color color, {
         String? parentId,
         Widget Function(String id)? customBodyBuilder,
         String? connectionTag,
         bool isClosable = true,
         bool appHasTitleBar = true,
       }) {
-
-    // ۱. ساخت Completer
     final completer = Completer<dynamic>();
 
     setState(() {
@@ -166,7 +182,12 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
 
       if (startMaximized) {
         startRect = safeRect;
-        savedRect = Rect.fromLTWH(safeRect.left + 40, safeRect.top + 40, targetWidth, targetHeight);
+        savedRect = Rect.fromLTWH(
+          safeRect.left + 40,
+          safeRect.top + 40,
+          targetWidth,
+          targetHeight,
+        );
       } else {
         double startX = safeRect.left + 50;
         double startY = safeRect.top + 50;
@@ -189,69 +210,75 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
             }
           }
         }
+
         startRect = Rect.fromLTWH(startX, startY, targetWidth, targetHeight);
         savedRect = startRect;
       }
 
-      Widget content;
-      if (customBodyBuilder != null) {
-        content = customBodyBuilder(newId);
-      } else {
-        content = Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Colors.white, color.withOpacity(0.05)],
-            ),
+      /// مهم‌ترین اصلاح:
+      /// محتوای پنجره باید حتماً زیر WindowScope باشد تا WindowScope.of(context) در child null نشود.
+      final Widget innerContent = (customBodyBuilder != null)
+          ? customBodyBuilder(newId)
+          : Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.white, color.withOpacity(0.05)],
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                title,
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey[800]),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[800],
               ),
-            ],
-          ),
-        );
-      }
+            ),
+          ],
+        ),
+      );
 
-      windows.add(WindowItem(
-        id: newId,
-        parentId: parentId,
-        groupId: "default",
-        title: title,
-        themeColor: color,
-        rect: startRect,
-        savedRect: savedRect,
-        isFocused: true,
-        isMaximized: startMaximized,
-        content: content,
-        connectionTag: connectionTag,
-        isClosable: isClosable,
-        hasTitleBar: finalHasTitleBar,
-        completer: completer, // ۲. اتصال Completer به پنجره
-      ));
+      final Widget content = WindowScope(
+        windowId: newId,
+        child: innerContent,
+      );
+
+      windows.add(
+        WindowItem(
+          id: newId,
+          parentId: parentId,
+          groupId: "default",
+          title: title,
+          themeColor: color,
+          rect: startRect,
+          savedRect: savedRect,
+          isFocused: true,
+          isMaximized: startMaximized,
+          content: content,
+          connectionTag: connectionTag,
+          isClosable: isClosable,
+          hasTitleBar: finalHasTitleBar,
+          completer: completer,
+        ),
+      );
 
       focusWindow(newId);
     });
 
-    // ۳. بازگرداندن فیوچر
     return completer.future;
   }
 
-  // تغییر: اضافه شدن result اختیاری
   void closeWindow(String id, [dynamic result]) {
     final index = windows.indexWhere((w) => w.id == id);
     if (index != -1) {
       final window = windows[index];
-
-      // اگر کسی منتظر بسته شدن است، نتیجه را ارسال کن
       if (window.completer != null && !window.completer!.isCompleted) {
         window.completer!.complete(result);
       }
-
       setState(() => windows.removeAt(index));
     }
   }
@@ -275,7 +302,8 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
     setState(() {
       final window = windows[index];
       if (window.isMaximized) {
-        window.rect = window.savedRect ?? Rect.fromLTWH(safeRect.left + 50, safeRect.top + 50, 360, 650);
+        window.rect = window.savedRect ??
+            Rect.fromLTWH(safeRect.left + 50, safeRect.top + 50, 360, 650);
         window.isMaximized = false;
       } else {
         window.savedRect = window.rect;
@@ -400,8 +428,7 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
         if (dx < w * 0.3) region = SnapRegion.leftThird;
         else if (dx > w * 0.7) region = SnapRegion.rightThird;
         else region = SnapRegion.centerThird;
-      }
-      else if (dx < edgeZone && !isMobile) region = SnapRegion.left;
+      } else if (dx < edgeZone && !isMobile) region = SnapRegion.left;
       else if (dx > w - edgeZone) region = SnapRegion.right;
     }
 
@@ -421,28 +448,63 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
     setState(() {
       final window = windows[index];
       window.savedRect = window.rect;
+
       final double safeW = screenSize.width - padding.left - padding.right;
       final double safeH = screenSize.height - padding.top - padding.bottom;
       final double startX = padding.left;
       final double startY = padding.top;
-      final hw = safeW/2;
-      final hh = safeH/2;
-      final tw = safeW/3;
+
+      final hw = safeW / 2;
+      final hh = safeH / 2;
+      final tw = safeW / 3;
+
       if (window.isMinimized) window.isMinimized = false;
 
       switch (activeSnapRegion) {
-        case SnapRegion.left: window.rect = Rect.fromLTWH(startX, startY, hw, safeH); window.isMaximized = false; break;
-        case SnapRegion.right: window.rect = Rect.fromLTWH(startX + hw, startY, hw, safeH); window.isMaximized = false; break;
-        case SnapRegion.top: window.rect = Rect.fromLTWH(startX, startY, safeW, safeH); window.isMaximized = true; break;
-        case SnapRegion.topLeft: window.rect = Rect.fromLTWH(startX, startY, hw, hh); window.isMaximized = false; break;
-        case SnapRegion.topRight: window.rect = Rect.fromLTWH(startX + hw, startY, hw, hh); window.isMaximized = false; break;
-        case SnapRegion.bottomLeft: window.rect = Rect.fromLTWH(startX, startY + hh, hw, hh); window.isMaximized = false; break;
-        case SnapRegion.bottomRight: window.rect = Rect.fromLTWH(startX + hw, startY + hh, hw, hh); window.isMaximized = false; break;
-        case SnapRegion.leftThird: window.rect = Rect.fromLTWH(startX, startY, tw, safeH); window.isMaximized = false; break;
-        case SnapRegion.centerThird: window.rect = Rect.fromLTWH(startX + tw, startY, tw, safeH); window.isMaximized = false; break;
-        case SnapRegion.rightThird: window.rect = Rect.fromLTWH(startX + tw*2, startY, tw, safeH); window.isMaximized = false; break;
-        default: break;
+        case SnapRegion.left:
+          window.rect = Rect.fromLTWH(startX, startY, hw, safeH);
+          window.isMaximized = false;
+          break;
+        case SnapRegion.right:
+          window.rect = Rect.fromLTWH(startX + hw, startY, hw, safeH);
+          window.isMaximized = false;
+          break;
+        case SnapRegion.top:
+          window.rect = Rect.fromLTWH(startX, startY, safeW, safeH);
+          window.isMaximized = true;
+          break;
+        case SnapRegion.topLeft:
+          window.rect = Rect.fromLTWH(startX, startY, hw, hh);
+          window.isMaximized = false;
+          break;
+        case SnapRegion.topRight:
+          window.rect = Rect.fromLTWH(startX + hw, startY, hw, hh);
+          window.isMaximized = false;
+          break;
+        case SnapRegion.bottomLeft:
+          window.rect = Rect.fromLTWH(startX, startY + hh, hw, hh);
+          window.isMaximized = false;
+          break;
+        case SnapRegion.bottomRight:
+          window.rect = Rect.fromLTWH(startX + hw, startY + hh, hw, hh);
+          window.isMaximized = false;
+          break;
+        case SnapRegion.leftThird:
+          window.rect = Rect.fromLTWH(startX, startY, tw, safeH);
+          window.isMaximized = false;
+          break;
+        case SnapRegion.centerThird:
+          window.rect = Rect.fromLTWH(startX + tw, startY, tw, safeH);
+          window.isMaximized = false;
+          break;
+        case SnapRegion.rightThird:
+          window.rect = Rect.fromLTWH(startX + tw * 2, startY, tw, safeH);
+          window.isMaximized = false;
+          break;
+        default:
+          break;
       }
+
       activeSnapRegion = SnapRegion.none;
     });
   }
@@ -465,13 +527,15 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
               fit: StackFit.expand,
               children: [
                 Positioned.fill(
-                  child: widget.background ?? Container(
-                    color: const Color(0xFF1E1E1E),
-                    child: CustomPaint(painter: GridPatternPainter(), size: Size.infinite),
-                  ),
+                  child: widget.background ??
+                      Container(
+                        color: const Color(0xFF1E1E1E),
+                        child: CustomPaint(painter: GridPatternPainter(), size: Size.infinite),
+                      ),
                 ),
                 Positioned(
-                  top: padding.top + 50, left: 30,
+                  top: padding.top + 50,
+                  left: 30,
                   child: Column(
                     children: widget.apps.map((app) {
                       return Padding(
@@ -485,11 +549,11 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
                     }).toList(),
                   ),
                 ),
-                Positioned.fill(child: IgnorePointer(
-                    child: CustomPaint(
-                        painter: ConnectionsPainter(windows, _lineAnimationController)
-                    )
-                )),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(painter: ConnectionsPainter(windows, _lineAnimationController)),
+                  ),
+                ),
                 if (activeSnapRegion != SnapRegion.none)
                   SnapPreviewOverlay(region: activeSnapRegion, screenSize: desktopSize, padding: padding),
                 ...windows.map((window) {
@@ -500,7 +564,6 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
                     desktopSize: desktopSize,
                     padding: padding,
                     onFocus: () => focusWindow(window.id),
-                    // اینجا تغییر نیازی ندارد چون متد closeWindow بدون آرگومان هم کار می‌کند (result = null)
                     onClose: () => closeWindow(window.id),
                     onMaximize: () => toggleMaximize(window.id, desktopSize, padding),
                     onMinimize: () => toggleMinimize(window.id),
@@ -513,13 +576,9 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
                 AnimatedPositioned(
                   duration: const Duration(milliseconds: 300),
                   curve: Curves.easeOutBack,
-                  top: isMobile
-                      ? 0
-                      : (_isDragging && _showSnapBar ? padding.top + 10 : -150),
+                  top: isMobile ? 0 : (_isDragging && _showSnapBar ? padding.top + 10 : -150),
                   bottom: isMobile ? 0 : null,
-                  left: isMobile
-                      ? (_isDragging && _showSnapBar ? 10 : -90)
-                      : 0,
+                  left: isMobile ? (_isDragging && _showSnapBar ? 10 : -90) : 0,
                   right: isMobile ? null : 0,
                   child: Center(
                     child: StaticSnapBar(
@@ -538,11 +597,34 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
 }
 
 class AppIconLauncher extends StatelessWidget {
-  final String label; final Color color; final VoidCallback onTap;
-  const AppIconLauncher({super.key, required this.label, required this.color, required this.onTap});
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const AppIconLauncher({
+    super.key,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(onTap: onTap, child:
-    Column(children: [
-      Text(label, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500, shadows: [Shadow(blurRadius: 4)]))])); }
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              shadows: [Shadow(blurRadius: 4)],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
