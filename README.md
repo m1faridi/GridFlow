@@ -153,8 +153,7 @@ class MyApp2 extends StatelessWidget {
 }
 
 
-```yaml
-
+yaml```
 sample:await ->
 
 var result = await DesktopProvider.of(context)?.openApp(
