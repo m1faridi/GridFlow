@@ -46,13 +46,54 @@ class _MyApp2State extends State<MyApp2> {
   ];
 
   static const List<Color> _palette = [
+    // Blue Spectrum
     Color(0xFF2563EB),
+    Color(0xFF1D4ED8),
+    Color(0xFF3B82F6),
+    Color(0xFF60A5FA),
+
+    // Orange / Amber
     Color(0xFFEA580C),
+    Color(0xFFF97316),
+    Color(0xFFF59E0B),
+    Color(0xFFFB923C),
+
+    // Green Spectrum
     Color(0xFF059669),
-    Color(0xFFBE185D),
+    Color(0xFF10B981),
+    Color(0xFF16A34A),
+    Color(0xFF22C55E),
+
+    // Red / Rose
+    Color(0xFFDC2626),
+    Color(0xFFBE123C),
+    Color(0xFFE11D48),
+    Color(0xFFEF4444),
+
+    // Purple / Violet
     Color(0xFF7C3AED),
+    Color(0xFF6D28D9),
+    Color(0xFF8B5CF6),
+    Color(0xFFA78BFA),
+
+    // Teal / Cyan
     Color(0xFF0F766E),
+    Color(0xFF14B8A6),
+    Color(0xFF0891B2),
+    Color(0xFF06B6D4),
+
+    // Pink / Magenta
+    Color(0xFFDB2777),
+    Color(0xFFEC4899),
+    Color(0xFFF472B6),
+
+    // Neutral / Accent
+    Color(0xFF334155),
+    Color(0xFF475569),
+    Color(0xFF64748B),
+    Color(0xFF94A3B8),
   ];
+
 
   late Color _themeColor;
   late String _title;

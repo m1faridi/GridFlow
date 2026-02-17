@@ -260,6 +260,7 @@ class _GridDesktopState extends State<GridDesktop>
       }) {
     final completer = Completer<dynamic>();
     Rect? openedRect;
+    bool openedAsMaximized = false;
 
     setState(() {
       final size = MediaQuery.of(context).size;
@@ -281,6 +282,8 @@ class _GridDesktopState extends State<GridDesktop>
       if (parentId != null) {
         parentWindow = _findParentWindow(parentId);
         if (parentWindow != null && parentWindow.isMaximized) {
+          startMaximized = true;
+        } else if (windows.isNotEmpty && windows.last.isMaximized) {
           startMaximized = true;
         }
       } else if (windows.isNotEmpty && windows.last.isMaximized) {
@@ -313,8 +316,8 @@ class _GridDesktopState extends State<GridDesktop>
           targetHeight,
         );
       } else {
-        double startX = safeRect.left + 50;
-        double startY = safeRect.top + 50;
+        double startX = safeRect.left;
+        double startY = safeRect.top;
         const double gap = 20.0;
 
         if (referenceWindow != null) {
@@ -326,6 +329,7 @@ class _GridDesktopState extends State<GridDesktop>
         savedRect = startRect;
       }
       openedRect = startRect;
+      openedAsMaximized = startMaximized;
 
       /// مهم‌ترین اصلاح:
       /// محتوای پنجره باید حتماً زیر WindowScope باشد تا WindowScope.of(context) در child null نشود.
@@ -381,7 +385,7 @@ class _GridDesktopState extends State<GridDesktop>
       focusWindow(newId);
     });
 
-    if (openedRect != null) {
+    if (openedRect != null && !openedAsMaximized) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _ensureWindowVisible(openedRect!);
       });
@@ -657,8 +661,13 @@ class _GridDesktopState extends State<GridDesktop>
               offsetY: _verticalOffset(),
             );
             final bool isMobile = desktopSize.width < 700;
+            final bool lockBackgroundScroll =
+                windows.any((window) => window.isMaximized && !window.isMinimized);
             const double backgroundScrollbarThickness = 10;
             const double backgroundDragInset = backgroundScrollbarThickness + 4;
+            const Color backgroundScrollbarThumbColor = Color(0xFF6B7078);
+            const Color backgroundScrollbarTrackColor = Color(0x332F343C);
+            const Color backgroundScrollbarTrackBorderColor = Color(0x66565C66);
             double canvasWidth = math.max(desktopSize.width, safeRect.right);
             double canvasHeight = math.max(desktopSize.height, safeRect.bottom);
             for (final window in windows) {
@@ -670,51 +679,62 @@ class _GridDesktopState extends State<GridDesktop>
             return Stack(
               fit: StackFit.expand,
               children: [
-                  RawScrollbar(
+                RawScrollbar(
+                  controller: _horizontalScrollController,
+                  notificationPredicate: (notification) =>
+                      notification.depth == 1 &&
+                      notification.metrics.axis == Axis.horizontal,
+                  thumbVisibility: !lockBackgroundScroll,
+                  trackVisibility: !lockBackgroundScroll,
+                  interactive: !lockBackgroundScroll,
+                  scrollbarOrientation: ScrollbarOrientation.bottom,
+                  thickness: backgroundScrollbarThickness,
+                  radius: const Radius.circular(10),
+                  thumbColor: backgroundScrollbarThumbColor,
+                  trackColor: backgroundScrollbarTrackColor,
+                  trackBorderColor: backgroundScrollbarTrackBorderColor,
+                  child: RawScrollbar(
                     controller: _verticalScrollController,
-                    thumbVisibility: true,
-                    trackVisibility: true,
-                    interactive: true,
+                    notificationPredicate: (notification) =>
+                        notification.depth == 0 &&
+                        notification.metrics.axis == Axis.vertical,
+                    thumbVisibility: !lockBackgroundScroll,
+                    trackVisibility: !lockBackgroundScroll,
+                    interactive: !lockBackgroundScroll,
                     thickness: backgroundScrollbarThickness,
                     radius: const Radius.circular(10),
-                    thumbColor: const Color(0xFF22C55E),
-                    trackColor: const Color(0x3322C55E),
-                    trackBorderColor: const Color(0x6622C55E),
+                    thumbColor: backgroundScrollbarThumbColor,
+                    trackColor: backgroundScrollbarTrackColor,
+                    trackBorderColor: backgroundScrollbarTrackBorderColor,
                     child: SingleChildScrollView(
                       controller: _verticalScrollController,
-                      physics: const ClampingScrollPhysics(),
+                      physics: lockBackgroundScroll
+                          ? const NeverScrollableScrollPhysics()
+                          : const ClampingScrollPhysics(),
                       scrollDirection: Axis.vertical,
-                      child: RawScrollbar(
+                      child: SingleChildScrollView(
                         controller: _horizontalScrollController,
-                        thumbVisibility: true,
-                        trackVisibility: true,
-                        interactive: true,
-                        scrollbarOrientation: ScrollbarOrientation.bottom,
-                        thickness: backgroundScrollbarThickness,
-                        radius: const Radius.circular(10),
-                        thumbColor: const Color(0xFF22C55E),
-                        trackColor: const Color(0x3322C55E),
-                        trackBorderColor: const Color(0x6622C55E),
-                        child: SingleChildScrollView(
-                          controller: _horizontalScrollController,
-                          physics: const ClampingScrollPhysics(),
-                          scrollDirection: Axis.horizontal,
-                          child: SizedBox(
-                            width: canvasWidth,
-                            height: canvasHeight,
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                Positioned.fill(
-                                  child: widget.background ??
-                                      Container(
-                                        color: const Color(0xFF1E1E1E),
-                                        child: CustomPaint(
-                                          painter: GridPatternPainter(),
-                                          size: Size.infinite,
-                                        ),
+                        physics: lockBackgroundScroll
+                            ? const NeverScrollableScrollPhysics()
+                            : const ClampingScrollPhysics(),
+                        scrollDirection: Axis.horizontal,
+                        child: SizedBox(
+                          width: canvasWidth,
+                          height: canvasHeight,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              Positioned.fill(
+                                child: widget.background ??
+                                    Container(
+                                      color: const Color(0xFF1E1E1E),
+                                      child: CustomPaint(
+                                        painter: GridPatternPainter(),
+                                        size: Size.infinite,
                                       ),
-                                ),
+                                    ),
+                              ),
+                              if (!lockBackgroundScroll)
                                 Positioned.fill(
                                   right: backgroundDragInset,
                                   bottom: backgroundDragInset,
@@ -724,52 +744,52 @@ class _GridDesktopState extends State<GridDesktop>
                                     child: const SizedBox.expand(),
                                   ),
                                 ),
-                                Positioned(
-                                  top: padding.top + 50,
-                                  left: 30,
-                                  child: Column(
-                                    children: widget.apps.map((app) {
-                                      return Padding(
-                                        padding: const EdgeInsets.only(bottom: 30),
-                                        child: AppIconLauncher(
-                                          label: app.title,
-                                          color: app.color,
-                                          onTap: () => openApp(app),
-                                        ),
-                                      );
-                                    }).toList(),
+                              Positioned(
+                                top: padding.top + 50,
+                                left: 30,
+                                child: Column(
+                                  children: widget.apps.map((app) {
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: 30),
+                                      child: AppIconLauncher(
+                                        label: app.title,
+                                        color: app.color,
+                                        onTap: () => openApp(app),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: CustomPaint(
+                                    painter: ConnectionsPainter(windows, _lineAnimationController),
                                   ),
                                 ),
-                                Positioned.fill(
-                                  child: IgnorePointer(
-                                    child: CustomPaint(
-                                      painter: ConnectionsPainter(windows, _lineAnimationController),
-                                    ),
-                                  ),
-                                ),
-                                ...windows.map((window) {
-                                  return FastWindow(
-                                    key: ValueKey(window.id),
-                                    window: window,
-                                    renderRect: window.isMaximized ? safeRect : window.rect,
-                                    desktopSize: desktopSize,
-                                    padding: padding,
-                                    onFocus: () => focusWindow(window.id),
-                                    onClose: () => closeWindow(window.id),
-                                    onMaximize: () => toggleMaximize(window.id, desktopSize, padding),
-                                    onMinimize: () => toggleMinimize(window.id),
-                                    onUpdate: (rect) => setState(() => window.rect = rect),
-                                    onDragUpdate: (d) => onWindowDragUpdate(window.id, d, desktopSize, padding),
-                                    onDragEnd: () => onWindowDragEnd(window.id, desktopSize, padding),
-                                  );
-                                }),
-                              ],
-                            ),
+                              ),
+                              ...windows.map((window) {
+                                return FastWindow(
+                                  key: ValueKey(window.id),
+                                  window: window,
+                                  renderRect: window.isMaximized ? safeRect : window.rect,
+                                  desktopSize: desktopSize,
+                                  padding: padding,
+                                  onFocus: () => focusWindow(window.id),
+                                  onClose: () => closeWindow(window.id),
+                                  onMaximize: () => toggleMaximize(window.id, desktopSize, padding),
+                                  onMinimize: () => toggleMinimize(window.id),
+                                  onUpdate: (rect) => setState(() => window.rect = rect),
+                                  onDragUpdate: (d) => onWindowDragUpdate(window.id, d, desktopSize, padding),
+                                  onDragEnd: () => onWindowDragEnd(window.id, desktopSize, padding),
+                                );
+                              }),
+                            ],
                           ),
                         ),
                       ),
                     ),
                   ),
+                ),
                   if (activeSnapRegion != SnapRegion.none)
                     SnapPreviewOverlay(region: activeSnapRegion, screenSize: desktopSize, padding: padding),
                   AnimatedPositioned(

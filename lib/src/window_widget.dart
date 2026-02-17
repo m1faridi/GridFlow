@@ -157,6 +157,19 @@ class FastWindow extends StatelessWidget {
   }
 
   Widget _buildWithTitleBar(Widget scopedContent) {
+    final bool isFocused = window.isFocused;
+    final Color titleBarBaseColor =
+        isFocused ? const Color(0xFF2C313A) : const Color(0xFF1E232A);
+    final Color titleBarTopColor =
+        isFocused ? const Color(0xFF343A45) : const Color(0xFF262C35);
+    final Color titleTextColor =
+        isFocused ? const Color(0xFFE7EDF7) : const Color(0xFFA3ADBA);
+    final Color iconColor =
+        isFocused ? const Color(0xFFD9E2EE) : const Color(0xFF8793A3);
+    final Color bottomLineColor = isFocused
+        ? window.themeColor.withValues(alpha: 0.55)
+        : const Color(0xFF353C47);
+
     return Column(
       children: [
         GestureDetector(
@@ -169,31 +182,40 @@ class FastWindow extends StatelessWidget {
           onPanUpdate: onDragUpdate,
           onPanEnd: (_) => onDragEnd(),
           child: Container(
-            height: 45,
-            color: window.isFocused
-                ? const Color(0xFFEFF2F9)
-                : const Color(0xFFF7F7F7),
-            padding: const EdgeInsets.symmetric(horizontal: 14),
+            height: 25,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [titleBarTopColor, titleBarBaseColor],
+              ),
+              border: Border(
+                bottom: BorderSide(color: bottomLineColor, width: 1),
+              ),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Row(
               children: [
                 Expanded(
                   child: Text(
                     window.title,
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color:
-                      window.isFocused ? Colors.black87 : Colors.grey[500],
+                      color: titleTextColor,
                     ),
                   ),
                 ),
                 IconButton(
                   icon: Icon(
                     CupertinoIcons.minus,
-                    size: 18,
-                    color:
-                    window.isFocused ? Colors.black87 : Colors.grey[500],
+                    size: 16,
+                    color: iconColor,
                   ),
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                  padding: EdgeInsets.zero,
+                  splashRadius: 16,
                   onPressed: onMinimize,
                 ),
                 IconButton(
@@ -201,28 +223,32 @@ class FastWindow extends StatelessWidget {
                     window.isMaximized
                         ? CupertinoIcons.arrow_down_right_arrow_up_left
                         : CupertinoIcons.crop,
-                    color:
-                    window.isFocused ? Colors.black87 : Colors.grey[500],
-                    size: 17,
+                    color: iconColor,
+                    size: 15,
                   ),
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                  padding: EdgeInsets.zero,
+                  splashRadius: 16,
                   onPressed: onMaximize,
                 ),
                 if (window.isClosable)
                   IconButton(
                     icon: Icon(
                       CupertinoIcons.xmark,
-                      color: window.isFocused
-                          ? Colors.black87
-                          : Colors.grey[500],
-                      size: 18,
+                      color: iconColor,
+                      size: 16,
                     ),
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                    padding: EdgeInsets.zero,
+                    splashRadius: 16,
                     onPressed: onClose,
                   ),
               ],
             ),
           ),
         ),
-        const Divider(height: 1, thickness: 0.5),
         Expanded(
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
