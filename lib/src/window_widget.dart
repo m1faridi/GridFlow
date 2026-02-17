@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_box_transform/flutter_box_transform.dart';
 
 import 'models.dart';
@@ -32,10 +33,40 @@ class FastWindow extends StatelessWidget {
     required this.onDragEnd,
   });
 
+  MouseCursor _cornerCursor(HandlePosition handle) {
+    final bool isMacOs = defaultTargetPlatform == TargetPlatform.macOS;
+    switch (handle) {
+      case HandlePosition.topLeft:
+      case HandlePosition.bottomRight:
+        return isMacOs
+            ? SystemMouseCursors.resizeLeftRight
+            : SystemMouseCursors.resizeUpLeftDownRight;
+      case HandlePosition.topRight:
+      case HandlePosition.bottomLeft:
+        return isMacOs
+            ? SystemMouseCursors.resizeUpDown
+            : SystemMouseCursors.resizeUpRightDownLeft;
+      default:
+        return SystemMouseCursors.basic;
+    }
+  }
+
+  MouseCursor _sideCursor(HandlePosition handle) {
+    switch (handle) {
+      case HandlePosition.top:
+      case HandlePosition.bottom:
+        return SystemMouseCursors.resizeUpDown;
+      case HandlePosition.left:
+      case HandlePosition.right:
+        return SystemMouseCursors.resizeLeftRight;
+      default:
+        return SystemMouseCursors.basic;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bool canResize =
-        window.isFocused && !window.isMaximized && !window.isMinimized;
+    final bool canResize = !window.isMaximized && !window.isMinimized;
 
     final Set<HandlePosition> allHandles = {
       HandlePosition.topLeft,
@@ -61,9 +92,26 @@ class FastWindow extends StatelessWidget {
           ? BoxConstraints.tight(const Size(220, 60))
           : const BoxConstraints(minWidth: 200, minHeight: 150),
       enabledHandles: canResize ? allHandles : {},
-      visibleHandles: const {},
-      handleAlignment: HandleAlignment.outside,
-      handleTapSize: 12,
+      visibleHandles: canResize ? allHandles : const {},
+      cornerHandleBuilder: (context, handle) {
+        return MouseRegion(
+          cursor: _cornerCursor(handle),
+          child: const SizedBox.expand(),
+        );
+      },
+      sideHandleBuilder: (context, handle) {
+        return MouseRegion(
+          cursor: _sideCursor(handle),
+          child: const SizedBox.expand(),
+        );
+      },
+      handleAlignment: HandleAlignment.center,
+      handleTapSize: 24,
+      onResizeStart: (_, event) {
+        if (!window.isFocused) {
+          onFocus();
+        }
+      },
       onChanged: (result, event) {
         if (!window.isMaximized && !window.isMinimized) {
           onUpdate(result.rect);
