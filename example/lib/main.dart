@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/cupertino.dart';
-import 'grid_os.dart';
+import 'package:grid_flow/grid_os.dart';
 import 'main2.dart'; // فایل main2 را ایمپورت کنید
 
 void main() {
@@ -31,10 +30,8 @@ class MyDesktop extends StatelessWidget {
       autoStartApps: [
         DesktopApp(
           title: "Auto App", // تیتر پنجره
-          icon: CupertinoIcons.bolt, // آیکون پنجره (بالا سمت چپ پنجره)
           color: Colors.purple,
           isClosable: false,
-          hasTitleBar: false,
           contentBuilder: (id) => const MyApp2(),
         ),
       ],
@@ -42,7 +39,6 @@ class MyDesktop extends StatelessWidget {
         // --- گروه اول ---
         DesktopApp(
           title: "Camera Input",
-          icon: CupertinoIcons.camera,
           color: Colors.blue,
           connectionTag: "group_1",
           // اتصال MyApp2 به این پنجره
@@ -51,7 +47,6 @@ class MyDesktop extends StatelessWidget {
         ),
         DesktopApp(
           title: "Save Output",
-          icon: CupertinoIcons.floppy_disk,
           color: Colors.green,
           connectionTag: "group_2",
         ),
@@ -59,13 +54,11 @@ class MyDesktop extends StatelessWidget {
         // --- گروه دوم ---
         DesktopApp(
           title: "Music Player",
-          icon: CupertinoIcons.music_note_2,
           color: Colors.red,
           connectionTag: "audio_system",
         ),
         DesktopApp(
           title: "Equalizer",
-          icon: CupertinoIcons.slider_horizontal_3,
           color: Colors.orange,
           connectionTag: "audio_system",
         ),

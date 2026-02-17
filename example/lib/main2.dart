@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'grid_os.dart';
+import 'package:grid_flow/grid_os.dart';
 
 class MyApp2 extends StatelessWidget {
 
@@ -27,7 +27,6 @@ class MyApp2 extends StatelessWidget {
                 DesktopProvider.of(context)?.openApp(
                   DesktopApp(
                     title: "Child Window",
-                    icon: CupertinoIcons.cube_box,
                     color: Colors.teal,
                     connectionTag: "group_1",
 
