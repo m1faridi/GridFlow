@@ -51,9 +51,9 @@ class SnapPreviewOverlay extends StatelessWidget {
           filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15), // شیشه‌ای روشن برای پیش‌نمایش
+              color: Colors.white.withValues(alpha: 0.15), // شیشه‌ای روشن برای پیش‌نمایش
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withOpacity(0.4), width: 1.5),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 1.5),
             ),
           ),
         ),
@@ -84,7 +84,7 @@ class StaticSnapBar extends StatelessWidget {
       Container(
         height: isVertical ? 1 : 24,
         width: isVertical ? 24 : 1,
-        color: Colors.white.withOpacity(0.3), // رنگ خط مات‌تر
+        color: Colors.white.withValues(alpha: 0.3), // رنگ خط مات‌تر
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       ),
 
@@ -97,7 +97,7 @@ class StaticSnapBar extends StatelessWidget {
       Container(
         height: isVertical ? 1 : 24,
         width: isVertical ? 24 : 1,
-        color: Colors.white.withOpacity(0.3),
+        color: Colors.white.withValues(alpha: 0.3),
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       ),
 
@@ -114,17 +114,17 @@ class StaticSnapBar extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             // رنگ سفید با شفافیت کم
-            color: Colors.white.withOpacity(0.25),
+            color: Colors.white.withValues(alpha: 0.25),
             borderRadius: BorderRadius.circular(24),
             // حاشیه سفید خیلی ظریف برای براق نشان دادن لبه‌ها
             border: Border.all(
-              color: Colors.white.withOpacity(0.3),
+              color: Colors.white.withValues(alpha: 0.3),
               width: 1.5,
             ),
             // سایه نرم و گسترده
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
+                color: Colors.black.withValues(alpha: 0.1),
                 blurRadius: 20,
                 spreadRadius: 0,
                 offset: const Offset(0, 8),
@@ -155,9 +155,9 @@ class SnapIcon extends StatelessWidget {
     final bool isActive = targetRegion == activeRegion;
 
     // رنگ‌ها برای حالت شیشه‌ای باید کمی زنده‌تر باشند
-    final Color activeBg = Colors.white.withOpacity(0.4);
-    final Color activeBorder = Colors.white.withOpacity(0.8);
-    final Color inactiveIcon = Colors.black.withOpacity(0.6); // آیکون تیره روی شیشه روشن
+    final Color activeBg = Colors.white.withValues(alpha: 0.4);
+    final Color activeBorder = Colors.white.withValues(alpha: 0.8);
+    final Color inactiveIcon = Colors.black.withValues(alpha: 0.6); // آیکون تیره روی شیشه روشن
     final Color activeIconColor = Colors.black87;
 
     return AnimatedContainer(
@@ -173,7 +173,7 @@ class SnapIcon extends StatelessWidget {
           ),
           // سایه ملایم وقتی انتخاب می‌شود
           boxShadow: isActive ? [
-            BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, spreadRadius: 1)
+            BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4, spreadRadius: 1)
           ] : [],
         ),
         child: Transform.rotate(

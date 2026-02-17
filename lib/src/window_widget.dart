@@ -6,6 +6,7 @@ import 'models.dart';
 
 class FastWindow extends StatelessWidget {
   final WindowItem window;
+  final Rect? renderRect;
   final Size desktopSize;
   final EdgeInsets padding;
   final VoidCallback onFocus;
@@ -19,6 +20,7 @@ class FastWindow extends StatelessWidget {
   const FastWindow({
     super.key,
     required this.window,
+    this.renderRect,
     required this.desktopSize,
     required this.padding,
     required this.onFocus,
@@ -54,14 +56,14 @@ class FastWindow extends StatelessWidget {
     );
 
     return TransformableBox(
-      rect: window.rect,
+      rect: renderRect ?? window.rect,
       constraints: window.isMinimized
           ? BoxConstraints.tight(const Size(220, 60))
           : const BoxConstraints(minWidth: 200, minHeight: 150),
       enabledHandles: canResize ? allHandles : {},
       visibleHandles: const {},
-      handleAlignment: HandleAlignment.inside,
-      handleTapSize: 20,
+      handleAlignment: HandleAlignment.outside,
+      handleTapSize: 12,
       onChanged: (result, event) {
         if (!window.isMaximized && !window.isMinimized) {
           onUpdate(result.rect);
@@ -126,20 +128,20 @@ class FastWindow extends StatelessWidget {
               boxShadow: window.isFocused && !window.isMaximized
                   ? [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.25),
+                  color: Colors.black.withValues(alpha: 0.25),
                   blurRadius: 30,
                   spreadRadius: 0,
                 ),
               ]
                   : [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
+                  color: Colors.black.withValues(alpha: 0.1),
                   blurRadius: 10,
                 ),
               ],
               border: Border.all(
                 color: (window.isFocused && !window.isMaximized)
-                    ? Colors.blueAccent.withOpacity(0.3)
+                    ? Colors.blueAccent.withValues(alpha: 0.3)
                     : Colors.transparent,
                 width: 0,
               ),
@@ -306,7 +308,7 @@ class DefaultWindowContent extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 45, color: color.withOpacity(0.5)),
+          Icon(icon, size: 45, color: color.withValues(alpha: 0.5)),
           const SizedBox(height: 10),
           Text(
             title,

@@ -1,21 +1,26 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'models.dart';
 import 'painters.dart';
 import 'window_widget.dart';
 import 'snap_overlays.dart';
 
+abstract class DesktopController {
+  Future<dynamic> openApp(DesktopApp app, {String? parentId});
+  void closeWindow(String id, [dynamic result]);
+}
+
 /// یک Handle که هم state را دارد هم context مربوط به caller.
 /// نتیجه: DesktopProvider.of(context)?.closeApp(true) دقیقاً مثل Navigator.pop(result)
 class DesktopHandle {
-  final _GridDesktopState _state;
+  final DesktopController _controller;
   final BuildContext _ctx;
 
-  DesktopHandle._(this._state, this._ctx);
+  DesktopHandle._(this._controller, this._ctx);
 
   Future<dynamic> openApp(DesktopApp app, {String? parentId}) {
-    return _state.openApp(app, parentId: parentId);
+    return _controller.openApp(app, parentId: parentId);
   }
 
   void closeApp(dynamic result) {
@@ -26,27 +31,27 @@ class DesktopHandle {
       debugPrint('[DesktopProvider] closeApp failed: WindowScope is null');
       return;
     }
-    _state.closeWindow(id, result);
+    _controller.closeWindow(id, result);
   }
 
   // اگر جایی هنوز close با id لازم داشتی:
-  void closeById(String id, [dynamic result]) => _state.closeWindow(id, result);
+  void closeById(String id, [dynamic result]) => _controller.closeWindow(id, result);
 }
 
 /// Provider اصلی
 class DesktopProvider extends InheritedWidget {
-  final _GridDesktopState state;
+  final DesktopController controller;
 
   const DesktopProvider({
     super.key,
-    required this.state,
+    required this.controller,
     required super.child,
   });
 
   static DesktopHandle? of(BuildContext context) {
     final provider = context.dependOnInheritedWidgetOfExactType<DesktopProvider>();
     if (provider == null) return null;
-    return DesktopHandle._(provider.state, context);
+    return DesktopHandle._(provider.controller, context);
   }
 
   @override
@@ -73,7 +78,15 @@ class GridDesktop extends StatefulWidget {
   State<GridDesktop> createState() => _GridDesktopState();
 }
 
-class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStateMixin {
+class _GridDesktopState extends State<GridDesktop>
+    with SingleTickerProviderStateMixin
+    implements DesktopController {
+  static const double _defaultWindowWidth = 500;
+  static const double _defaultWindowHeight = 760;
+
+  late final ScrollController _horizontalScrollController;
+  late final ScrollController _verticalScrollController;
+
   List<WindowItem> windows = [];
   SnapRegion activeSnapRegion = SnapRegion.none;
   bool _isDragging = false;
@@ -84,6 +97,8 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
+    _horizontalScrollController = ScrollController();
+    _verticalScrollController = ScrollController();
     _lineAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -112,19 +127,117 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
 
   @override
   void dispose() {
+    _horizontalScrollController.dispose();
+    _verticalScrollController.dispose();
     _lineAnimationController.dispose();
     super.dispose();
   }
 
-  Rect _getSafeRect(Size screenSize, EdgeInsets padding) {
+  Rect _getSafeRect(
+    Size screenSize,
+    EdgeInsets padding, {
+    double offsetX = 0,
+    double offsetY = 0,
+  }) {
     return Rect.fromLTWH(
-      padding.left,
-      padding.top,
+      offsetX + padding.left,
+      offsetY + padding.top,
       screenSize.width - padding.left - padding.right,
       screenSize.height - padding.top - padding.bottom,
     );
   }
 
+  double _horizontalOffset() =>
+      _horizontalScrollController.hasClients ? _horizontalScrollController.offset : 0;
+
+  double _verticalOffset() =>
+      _verticalScrollController.hasClients ? _verticalScrollController.offset : 0;
+
+  void _panCanvas(DragUpdateDetails details) {
+    if (_horizontalScrollController.hasClients) {
+      final position = _horizontalScrollController.position;
+      final target = (position.pixels - details.delta.dx)
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      if (target != position.pixels) {
+        _horizontalScrollController.jumpTo(target);
+      }
+    }
+
+    if (_verticalScrollController.hasClients) {
+      final position = _verticalScrollController.position;
+      final target = (position.pixels - details.delta.dy)
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      if (target != position.pixels) {
+        _verticalScrollController.jumpTo(target);
+      }
+    }
+  }
+
+  void _ensureWindowVisible(Rect rect) {
+    if (!mounted) return;
+
+    final size = MediaQuery.of(context).size;
+    final padding = MediaQuery.of(context).padding;
+    final viewportWidth = size.width - padding.left - padding.right;
+    final viewportHeight = size.height - padding.top - padding.bottom;
+    if (viewportWidth <= 0 || viewportHeight <= 0) return;
+
+    const double margin = 24;
+
+    if (_horizontalScrollController.hasClients) {
+      final position = _horizontalScrollController.position;
+      final visibleLeft = _horizontalOffset() + padding.left;
+      final visibleRight = visibleLeft + viewportWidth;
+      double target = position.pixels;
+
+      if (rect.right + margin > visibleRight) {
+        target = rect.right + margin - padding.left - viewportWidth;
+      } else if (rect.left - margin < visibleLeft) {
+        target = rect.left - margin - padding.left;
+      }
+
+      final clamped = target.clamp(position.minScrollExtent, position.maxScrollExtent).toDouble();
+      if (clamped != position.pixels) {
+        _horizontalScrollController.jumpTo(clamped);
+      }
+    }
+
+    if (_verticalScrollController.hasClients) {
+      final position = _verticalScrollController.position;
+      final visibleTop = _verticalOffset() + padding.top;
+      final visibleBottom = visibleTop + viewportHeight;
+      double target = position.pixels;
+
+      if (rect.bottom + margin > visibleBottom) {
+        target = rect.bottom + margin - padding.top - viewportHeight;
+      } else if (rect.top - margin < visibleTop) {
+        target = rect.top - margin - padding.top;
+      }
+
+      final clamped = target.clamp(position.minScrollExtent, position.maxScrollExtent).toDouble();
+      if (clamped != position.pixels) {
+        _verticalScrollController.jumpTo(clamped);
+      }
+    }
+  }
+
+  WindowItem? _findParentWindow(String parentId) {
+    for (final window in windows) {
+      if (window.id == parentId) {
+        return window;
+      }
+    }
+    for (final window in windows.reversed) {
+      if (window.connectionTag == parentId) {
+        return window;
+      }
+    }
+    return null;
+  }
+
+  @override
   Future<dynamic> openApp(DesktopApp app, {String? parentId}) {
     return _internalOpenWindow(
       app.title,
@@ -146,11 +259,17 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
         bool appHasTitleBar = true,
       }) {
     final completer = Completer<dynamic>();
+    Rect? openedRect;
 
     setState(() {
       final size = MediaQuery.of(context).size;
       final padding = MediaQuery.of(context).padding;
-      final safeRect = _getSafeRect(size, padding);
+      final safeRect = _getSafeRect(
+        size,
+        padding,
+        offsetX: _horizontalOffset(),
+        offsetY: _verticalOffset(),
+      );
       final String newId = DateTime.now().toIso8601String();
 
       final bool finalHasTitleBar = widget.hasTitleBar && appHasTitleBar;
@@ -160,22 +279,27 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
 
       WindowItem? parentWindow;
       if (parentId != null) {
-        try {
-          parentWindow = windows.firstWhere((w) => w.id == parentId);
-          if (parentWindow.isMaximized) startMaximized = true;
-        } catch (_) {}
+        parentWindow = _findParentWindow(parentId);
+        if (parentWindow != null && parentWindow.isMaximized) {
+          startMaximized = true;
+        }
       } else if (windows.isNotEmpty && windows.last.isMaximized) {
         startMaximized = true;
       }
 
-      double targetWidth = 360;
-      double targetHeight = 650;
+      double targetWidth = _defaultWindowWidth;
+      double targetHeight = _defaultWindowHeight;
       WindowItem? referenceWindow = parentWindow ?? (windows.isNotEmpty ? windows.last : null);
 
       if (referenceWindow != null) {
         targetWidth = referenceWindow.rect.width;
         targetHeight = referenceWindow.rect.height;
       }
+
+      final double maxWidth = (safeRect.width - 80).clamp(260.0, double.infinity).toDouble();
+      final double maxHeight = (safeRect.height - 80).clamp(180.0, double.infinity).toDouble();
+      targetWidth = targetWidth.clamp(260.0, maxWidth).toDouble();
+      targetHeight = targetHeight.clamp(180.0, maxHeight).toDouble();
 
       Rect startRect;
       Rect savedRect;
@@ -194,26 +318,14 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
         const double gap = 20.0;
 
         if (referenceWindow != null) {
-          double potentialX = referenceWindow.rect.right + gap;
-          double potentialY = referenceWindow.rect.top;
-          if (potentialX + targetWidth <= safeRect.right) {
-            startX = potentialX;
-            startY = potentialY;
-          } else {
-            startX = safeRect.left + 50;
-            double nextLineY = referenceWindow.rect.bottom + gap;
-            if (nextLineY + targetHeight <= safeRect.bottom) {
-              startY = nextLineY;
-            } else {
-              startX = safeRect.left + 50;
-              startY = safeRect.top + 50;
-            }
-          }
+          startX = referenceWindow.rect.right + gap;
+          startY = referenceWindow.rect.top;
         }
 
         startRect = Rect.fromLTWH(startX, startY, targetWidth, targetHeight);
         savedRect = startRect;
       }
+      openedRect = startRect;
 
       /// مهم‌ترین اصلاح:
       /// محتوای پنجره باید حتماً زیر WindowScope باشد تا WindowScope.of(context) در child null نشود.
@@ -224,7 +336,7 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Colors.white, color.withOpacity(0.05)],
+            colors: [Colors.white, color.withValues(alpha: 0.05)],
           ),
         ),
         child: Column(
@@ -269,9 +381,16 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
       focusWindow(newId);
     });
 
+    if (openedRect != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _ensureWindowVisible(openedRect!);
+      });
+    }
+
     return completer.future;
   }
 
+  @override
   void closeWindow(String id, [dynamic result]) {
     final index = windows.indexWhere((w) => w.id == id);
     if (index != -1) {
@@ -298,12 +417,22 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
   void toggleMaximize(String id, Size screenSize, EdgeInsets padding) {
     final index = windows.indexWhere((w) => w.id == id);
     if (index == -1) return;
-    final safeRect = _getSafeRect(screenSize, padding);
+    final safeRect = _getSafeRect(
+      screenSize,
+      padding,
+      offsetX: _horizontalOffset(),
+      offsetY: _verticalOffset(),
+    );
     setState(() {
       final window = windows[index];
       if (window.isMaximized) {
         window.rect = window.savedRect ??
-            Rect.fromLTWH(safeRect.left + 50, safeRect.top + 50, 360, 650);
+            Rect.fromLTWH(
+              safeRect.left + 50,
+              safeRect.top + 50,
+              _defaultWindowWidth,
+              _defaultWindowHeight,
+            );
         window.isMaximized = false;
       } else {
         window.savedRect = window.rect;
@@ -320,7 +449,8 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
     setState(() {
       final window = windows[index];
       if (window.isMinimized) {
-        window.rect = window.preMinRect ?? const Rect.fromLTWH(100, 100, 360, 650);
+        window.rect = window.preMinRect ??
+            Rect.fromLTWH(100, 100, _defaultWindowWidth, _defaultWindowHeight);
         window.isMinimized = false;
         focusWindow(id);
       } else {
@@ -451,8 +581,8 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
 
       final double safeW = screenSize.width - padding.left - padding.right;
       final double safeH = screenSize.height - padding.top - padding.bottom;
-      final double startX = padding.left;
-      final double startY = padding.top;
+      final double startX = _horizontalOffset() + padding.left;
+      final double startY = _verticalOffset() + padding.top;
 
       final hw = safeW / 2;
       final hh = safeH / 2;
@@ -512,7 +642,7 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
   @override
   Widget build(BuildContext context) {
     return DesktopProvider(
-      state: this,
+      controller: this,
       child: Scaffold(
         backgroundColor: Colors.black,
         resizeToAvoidBottomInset: false,
@@ -520,73 +650,142 @@ class _GridDesktopState extends State<GridDesktop> with SingleTickerProviderStat
           builder: (context, constraints) {
             final desktopSize = Size(constraints.maxWidth, constraints.maxHeight);
             final padding = MediaQuery.of(context).padding;
-            final safeRect = _getSafeRect(desktopSize, padding);
+            final safeRect = _getSafeRect(
+              desktopSize,
+              padding,
+              offsetX: _horizontalOffset(),
+              offsetY: _verticalOffset(),
+            );
             final bool isMobile = desktopSize.width < 700;
+            const double backgroundScrollbarThickness = 10;
+            const double backgroundDragInset = backgroundScrollbarThickness + 4;
+            double canvasWidth = math.max(desktopSize.width, safeRect.right);
+            double canvasHeight = math.max(desktopSize.height, safeRect.bottom);
+            for (final window in windows) {
+              final rect = window.isMaximized ? safeRect : window.rect;
+              canvasWidth = math.max(canvasWidth, rect.right + 200);
+              canvasHeight = math.max(canvasHeight, rect.bottom + 200);
+            }
 
             return Stack(
               fit: StackFit.expand,
               children: [
-                Positioned.fill(
-                  child: widget.background ??
-                      Container(
-                        color: const Color(0xFF1E1E1E),
-                        child: CustomPaint(painter: GridPatternPainter(), size: Size.infinite),
-                      ),
-                ),
-                Positioned(
-                  top: padding.top + 50,
-                  left: 30,
-                  child: Column(
-                    children: widget.apps.map((app) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 30),
-                        child: AppIconLauncher(
-                          label: app.title,
-                          color: app.color,
-                          onTap: () => openApp(app),
+                  RawScrollbar(
+                    controller: _verticalScrollController,
+                    thumbVisibility: true,
+                    trackVisibility: true,
+                    interactive: true,
+                    thickness: backgroundScrollbarThickness,
+                    radius: const Radius.circular(10),
+                    thumbColor: const Color(0xFF22C55E),
+                    trackColor: const Color(0x3322C55E),
+                    trackBorderColor: const Color(0x6622C55E),
+                    child: SingleChildScrollView(
+                      controller: _verticalScrollController,
+                      physics: const ClampingScrollPhysics(),
+                      scrollDirection: Axis.vertical,
+                      child: RawScrollbar(
+                        controller: _horizontalScrollController,
+                        thumbVisibility: true,
+                        trackVisibility: true,
+                        interactive: true,
+                        scrollbarOrientation: ScrollbarOrientation.bottom,
+                        thickness: backgroundScrollbarThickness,
+                        radius: const Radius.circular(10),
+                        thumbColor: const Color(0xFF22C55E),
+                        trackColor: const Color(0x3322C55E),
+                        trackBorderColor: const Color(0x6622C55E),
+                        child: SingleChildScrollView(
+                          controller: _horizontalScrollController,
+                          physics: const ClampingScrollPhysics(),
+                          scrollDirection: Axis.horizontal,
+                          child: SizedBox(
+                            width: canvasWidth,
+                            height: canvasHeight,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Positioned.fill(
+                                  child: widget.background ??
+                                      Container(
+                                        color: const Color(0xFF1E1E1E),
+                                        child: CustomPaint(
+                                          painter: GridPatternPainter(),
+                                          size: Size.infinite,
+                                        ),
+                                      ),
+                                ),
+                                Positioned.fill(
+                                  right: backgroundDragInset,
+                                  bottom: backgroundDragInset,
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.translucent,
+                                    onPanUpdate: _panCanvas,
+                                    child: const SizedBox.expand(),
+                                  ),
+                                ),
+                                Positioned(
+                                  top: padding.top + 50,
+                                  left: 30,
+                                  child: Column(
+                                    children: widget.apps.map((app) {
+                                      return Padding(
+                                        padding: const EdgeInsets.only(bottom: 30),
+                                        child: AppIconLauncher(
+                                          label: app.title,
+                                          color: app.color,
+                                          onTap: () => openApp(app),
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                                ),
+                                Positioned.fill(
+                                  child: IgnorePointer(
+                                    child: CustomPaint(
+                                      painter: ConnectionsPainter(windows, _lineAnimationController),
+                                    ),
+                                  ),
+                                ),
+                                ...windows.map((window) {
+                                  return FastWindow(
+                                    key: ValueKey(window.id),
+                                    window: window,
+                                    renderRect: window.isMaximized ? safeRect : window.rect,
+                                    desktopSize: desktopSize,
+                                    padding: padding,
+                                    onFocus: () => focusWindow(window.id),
+                                    onClose: () => closeWindow(window.id),
+                                    onMaximize: () => toggleMaximize(window.id, desktopSize, padding),
+                                    onMinimize: () => toggleMinimize(window.id),
+                                    onUpdate: (rect) => setState(() => window.rect = rect),
+                                    onDragUpdate: (d) => onWindowDragUpdate(window.id, d, desktopSize, padding),
+                                    onDragEnd: () => onWindowDragEnd(window.id, desktopSize, padding),
+                                  );
+                                }),
+                              ],
+                            ),
+                          ),
                         ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: CustomPaint(painter: ConnectionsPainter(windows, _lineAnimationController)),
-                  ),
-                ),
-                if (activeSnapRegion != SnapRegion.none)
-                  SnapPreviewOverlay(region: activeSnapRegion, screenSize: desktopSize, padding: padding),
-                ...windows.map((window) {
-                  if (window.isMaximized) window.rect = safeRect;
-                  return FastWindow(
-                    key: ValueKey(window.id),
-                    window: window,
-                    desktopSize: desktopSize,
-                    padding: padding,
-                    onFocus: () => focusWindow(window.id),
-                    onClose: () => closeWindow(window.id),
-                    onMaximize: () => toggleMaximize(window.id, desktopSize, padding),
-                    onMinimize: () => toggleMinimize(window.id),
-                    onUpdate: (rect) => setState(() => window.rect = rect),
-                    onDragUpdate: (d) => onWindowDragUpdate(window.id, d, desktopSize, padding),
-                    onDragEnd: () => onWindowDragEnd(window.id, desktopSize, padding),
-                  );
-                }),
-
-                AnimatedPositioned(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeOutBack,
-                  top: isMobile ? 0 : (_isDragging && _showSnapBar ? padding.top + 10 : -150),
-                  bottom: isMobile ? 0 : null,
-                  left: isMobile ? (_isDragging && _showSnapBar ? 10 : -90) : 0,
-                  right: isMobile ? null : 0,
-                  child: Center(
-                    child: StaticSnapBar(
-                      activeRegion: activeSnapRegion,
-                      isVertical: isMobile,
+                      ),
                     ),
                   ),
-                ),
+                  if (activeSnapRegion != SnapRegion.none)
+                    SnapPreviewOverlay(region: activeSnapRegion, screenSize: desktopSize, padding: padding),
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutBack,
+                    top: isMobile ? 0 : (_isDragging && _showSnapBar ? padding.top + 10 : -150),
+                    bottom: isMobile ? 0 : null,
+                    left: isMobile ? (_isDragging && _showSnapBar ? 10 : -90) : 0,
+                    right: isMobile ? null : 0,
+                    child: Center(
+                      child: StaticSnapBar(
+                        activeRegion: activeSnapRegion,
+                        isVertical: isMobile,
+                      ),
+                    ),
+                  ),
               ],
             );
           },

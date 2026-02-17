@@ -7,7 +7,7 @@ class GridPatternPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.white.withOpacity(0.03) // کمرنگ‌تر و شیک‌تر
+      ..color = Colors.white.withValues(alpha: 0.03) // کمرنگ‌تر و شیک‌تر
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
 
@@ -123,49 +123,14 @@ class ConnectionsPainter extends CustomPainter {
         // 1. Glow Effect (سایه نئونی زیر خط)
         // رنگی همرنگ تم پنجره ولی شفاف‌تر و پهن‌تر
         final glowPaint = Paint()
-          ..color = endWin.themeColor.withOpacity(0.4)
+          ..color = endWin.themeColor.withValues(alpha: 0.4)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 6.0
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4); // بلور کردن برای افکت نئون
 
         canvas.drawPath(path, glowPaint);
 
-        // 2. Animated Gradient Flow (جریان متحرک)
-        // این گرادینت باعث می‌شود به نظر برسد دیتا دارد حرکت می‌کند
-        final Rect pathBounds = path.getBounds();
-
-        // ایجاد یک Shader متحرک
-        // با استفاده از animation.value موقعیت رنگ‌ها را تغییر می‌دهیم
-        final List<Color> colors = [
-          endWin.themeColor,
-          Colors.white,
-          endWin.themeColor,
-        ];
-
-        // محاسبه Shift برای حرکت
-        final double shift = animation.value;
-        final List<double> stops = [
-          0.0,
-          shift, // رنگ سفید در طول خط حرکت می‌کند
-          1.0,
-        ];
-
-        // اگر بخواهیم خیلی حرفه‌ای شود، از createShader روی خود Path استفاده می‌کنیم
-        // اما Linear ساده‌تر و سریع‌تر است
-        final mainPaint = Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 3.0
-          ..strokeCap = StrokeCap.round
-          ..shader = ui.Gradient.linear(
-              start,
-              end,
-              [endWin.themeColor, Colors.white.withOpacity(0.8), endWin.themeColor],
-              [0.0, animation.value, 1.0], // انیمیشن ساده
-              TileMode.clamp
-          );
-
-        // روش پیشرفته‌تر: Flow Animation (تکه‌های متحرک)
-        // اگر بخواهیم خط‌چین‌های متحرک داشته باشیم:
+        // سبک اصلی اتصال: glow + dashed flow (همان ظاهر قبلی)
         _drawAnimatedDashedLine(canvas, path, endWin.themeColor, animation.value);
 
         // دایره‌های اتصال (Anchor Points)

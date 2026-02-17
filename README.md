@@ -10,14 +10,14 @@
 
 A high-performance, OS-like **window management framework** for Flutter that enables **multi-window desktop experiences** inside a single application.
 
-GridFlow allows you to build draggable, window-based UIs with **runtime window spawning**, **window grouping**, and **mobile ↔ desktop mode switching** — all rendered purely in Flutter with no native dependencies.
+GridFlow allows you to build draggable, window-based UIs with **runtime window spawning** and **window grouping** — all rendered purely in Flutter with no native dependencies.
 
 ---
 
 ## ✨ Highlights
 
-- **Desktop / Window Mode Toggle**  
-  Switch between mobile layout and windowed desktop layout at runtime
+- **Configurable Window Chrome**  
+  Control title bar visibility and behavior for each desktop session
 
 - **Multi-Window UI**  
   Manage multiple independent windows inside a single Flutter app
@@ -67,18 +67,22 @@ dependencies:
   grid_flow:
     git:
       url: https://github.com/m1faridi/GridFlow.git
+```
+
 Then run:
 
-bash
-Copy code
+```bash
 flutter pub get
-🚀 Quick Start
-1️⃣ Create a Desktop Container
-dart
-Copy code
+```
+
+## 🚀 Quick Start
+
+### 1) Create a Desktop Container
+
+```dart
 GridDesktop(
-  isWindowMode: isWindowMode,
-  hasTitleBar: isWindowMode,
+  isWindowMode: true,
+  hasTitleBar: true,
 
   autoStartApps: [
     DesktopApp(
@@ -113,11 +117,13 @@ GridDesktop(
     ),
   ],
 )
-2️⃣ Open New Windows at Runtime (Child Windows)
-Any window can spawn new windows dynamically using DesktopProvider:
+```
 
-dart
-Copy code
+### 2) Open New Windows at Runtime (Child Windows)
+
+Any window can spawn new windows dynamically using `DesktopProvider`:
+
+```dart
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -151,23 +157,22 @@ class MyApp2 extends StatelessWidget {
     );
   }
 }
+```
 
+### 3) Await window result
 
-yaml```
-sample:await ->
+```dart
+final result = await DesktopProvider.of(context)?.openApp(
+  DesktopApp(
+    title: "Child Window",
+    color: Colors.teal,
+    connectionTag: "group_1",
+    contentBuilder: (id) => const MyApp2(),
+  ),
+  parentId: "group_1",
+);
 
-var result = await DesktopProvider.of(context)?.openApp(
-    DesktopApp(
-      title: "Child Window",
-      color: Colors.teal,
-      connectionTag: "group_1",
-      contentBuilder: (id) => MyApp2(),
-    ),
-    parentId: "group_1", 
-  );
-  
-  print("پنجره بسته شد! نتیجه: $result");
-  --------
-   var back = "return"
-        DesktopProvider.of(context)?.closeApp(back);
+debugPrint("Window closed with result: $result");
 
+DesktopProvider.of(context)?.closeApp("return");
+```
