@@ -175,7 +175,23 @@ class _GridDesktopState extends State<GridDesktop>
     }
   }
 
-  void _ensureWindowVisible(Rect rect) {
+  Rect _fitRectInsideSafeRect(Rect rect, Rect safeRect) {
+    final double minWidth = math.min(200.0, safeRect.width);
+    final double minHeight = math.min(150.0, safeRect.height);
+    final double fittedWidth = rect.width.clamp(minWidth, safeRect.width).toDouble();
+    final double fittedHeight = rect.height.clamp(minHeight, safeRect.height).toDouble();
+    final double maxLeft = safeRect.right - fittedWidth;
+    final double maxTop = safeRect.bottom - fittedHeight;
+    final double fittedLeft = rect.left.clamp(safeRect.left, maxLeft).toDouble();
+    final double fittedTop = rect.top.clamp(safeRect.top, maxTop).toDouble();
+    return Rect.fromLTWH(fittedLeft, fittedTop, fittedWidth, fittedHeight);
+  }
+
+  void _ensureWindowVisible(
+    Rect rect, {
+    bool adjustHorizontal = true,
+    bool adjustVertical = true,
+  }) {
     if (!mounted) return;
 
     final size = MediaQuery.of(context).size;
@@ -186,7 +202,7 @@ class _GridDesktopState extends State<GridDesktop>
 
     const double margin = 24;
 
-    if (_horizontalScrollController.hasClients) {
+    if (adjustHorizontal && _horizontalScrollController.hasClients) {
       final position = _horizontalScrollController.position;
       final visibleLeft = _horizontalOffset() + padding.left;
       final visibleRight = visibleLeft + viewportWidth;
@@ -204,7 +220,7 @@ class _GridDesktopState extends State<GridDesktop>
       }
     }
 
-    if (_verticalScrollController.hasClients) {
+    if (adjustVertical && _verticalScrollController.hasClients) {
       final position = _verticalScrollController.position;
       final visibleTop = _verticalOffset() + padding.top;
       final visibleBottom = visibleTop + viewportHeight;
@@ -261,6 +277,7 @@ class _GridDesktopState extends State<GridDesktop>
     final completer = Completer<dynamic>();
     Rect? openedRect;
     bool openedAsMaximized = false;
+    bool openedOnMobile = false;
 
     setState(() {
       final size = MediaQuery.of(context).size;
@@ -276,7 +293,8 @@ class _GridDesktopState extends State<GridDesktop>
       final bool finalHasTitleBar = widget.hasTitleBar && appHasTitleBar;
 
       final bool isMobile = size.width < 700;
-      bool startMaximized = isMobile;
+      openedOnMobile = isMobile;
+      bool startMaximized = isMobile && windows.isEmpty;
 
       WindowItem? parentWindow;
       if (parentId != null) {
@@ -291,7 +309,7 @@ class _GridDesktopState extends State<GridDesktop>
       }
 
       double targetWidth = _defaultWindowWidth;
-      double targetHeight = _defaultWindowHeight;
+      double targetHeight = safeRect.height;
       WindowItem? referenceWindow = parentWindow ?? (windows.isNotEmpty ? windows.last : null);
 
       if (referenceWindow != null) {
@@ -300,7 +318,7 @@ class _GridDesktopState extends State<GridDesktop>
       }
 
       final double maxWidth = (safeRect.width - 80).clamp(260.0, double.infinity).toDouble();
-      final double maxHeight = (safeRect.height - 80).clamp(180.0, double.infinity).toDouble();
+      final double maxHeight = safeRect.height.clamp(180.0, double.infinity).toDouble();
       targetWidth = targetWidth.clamp(260.0, maxWidth).toDouble();
       targetHeight = targetHeight.clamp(180.0, maxHeight).toDouble();
 
@@ -309,23 +327,33 @@ class _GridDesktopState extends State<GridDesktop>
 
       if (startMaximized) {
         startRect = safeRect;
-        savedRect = Rect.fromLTWH(
-          safeRect.left + 40,
-          safeRect.top + 40,
-          targetWidth,
-          targetHeight,
+        savedRect = _fitRectInsideSafeRect(
+          Rect.fromLTWH(
+            safeRect.left + 24,
+            safeRect.top + 24,
+            targetWidth,
+            targetHeight,
+          ),
+          safeRect,
         );
       } else {
-        double startX = safeRect.left;
-        double startY = safeRect.top;
-        const double gap = 20.0;
-
         if (referenceWindow != null) {
-          startX = referenceWindow.rect.right + gap;
-          startY = referenceWindow.rect.top;
+          const double openGap = 18;
+          final Rect rightOfCurrent = Rect.fromLTWH(
+            referenceWindow.rect.right + openGap,
+            referenceWindow.rect.top,
+            targetWidth,
+            targetHeight,
+          );
+          startRect = isMobile
+              ? _fitRectInsideSafeRect(rightOfCurrent, safeRect)
+              : rightOfCurrent;
+        } else {
+          startRect = _fitRectInsideSafeRect(
+            Rect.fromLTWH(safeRect.left, safeRect.top, targetWidth, targetHeight),
+            safeRect,
+          );
         }
-
-        startRect = Rect.fromLTWH(startX, startY, targetWidth, targetHeight);
         savedRect = startRect;
       }
       openedRect = startRect;
@@ -385,9 +413,13 @@ class _GridDesktopState extends State<GridDesktop>
       focusWindow(newId);
     });
 
-    if (openedRect != null && !openedAsMaximized) {
+    if (openedRect != null && !openedAsMaximized && !openedOnMobile) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _ensureWindowVisible(openedRect!);
+        _ensureWindowVisible(
+          openedRect!,
+          adjustHorizontal: true,
+          adjustVertical: false,
+        );
       });
     }
 
@@ -470,41 +502,49 @@ class _GridDesktopState extends State<GridDesktop>
     final index = windows.indexWhere((w) => w.id == id);
     if (index == -1) return;
     final window = windows[index];
+    final bool isMobile = screenSize.width < 700;
+    final Rect safeRect = _getSafeRect(
+      screenSize,
+      padding,
+      offsetX: _horizontalOffset(),
+      offsetY: _verticalOffset(),
+    );
 
     if (!window.isMaximized) {
       setState(() {
-        window.rect = window.rect.shift(details.delta);
-        if (window.rect.top < padding.top) {
-          window.rect = Rect.fromLTWH(window.rect.left, padding.top, window.rect.width, window.rect.height);
+        final Rect shifted = window.rect.shift(details.delta);
+        if (isMobile) {
+          window.rect = _fitRectInsideSafeRect(shifted, safeRect);
+          _showSnapBar = false;
+          activeSnapRegion = SnapRegion.none;
+        } else {
+          window.rect = shifted;
+          if (window.rect.top < safeRect.top) {
+            window.rect = Rect.fromLTWH(
+              window.rect.left,
+              safeRect.top,
+              window.rect.width,
+              window.rect.height,
+            );
+          }
         }
         _isDragging = true;
       });
     }
 
+    if (isMobile) return;
+
     final double dx = details.globalPosition.dx;
     final double dy = details.globalPosition.dy;
     final double w = screenSize.width;
-    final double h = screenSize.height;
 
-    final bool isMobile = w < 700;
     bool shouldShowSnapBar = false;
-
-    if (isMobile) {
-      if (dx < 30) {
-        shouldShowSnapBar = true;
-      } else if (_showSnapBar && dx > 120) {
-        shouldShowSnapBar = false;
-      } else {
-        shouldShowSnapBar = _showSnapBar;
-      }
+    if (dy < padding.top + 10) {
+      shouldShowSnapBar = true;
+    } else if (_showSnapBar && dy > padding.top + 150) {
+      shouldShowSnapBar = false;
     } else {
-      if (dy < padding.top + 10) {
-        shouldShowSnapBar = true;
-      } else if (_showSnapBar && dy > padding.top + 150) {
-        shouldShowSnapBar = false;
-      } else {
-        shouldShowSnapBar = _showSnapBar;
-      }
+      shouldShowSnapBar = _showSnapBar;
     }
 
     if (_showSnapBar != shouldShowSnapBar) {
@@ -515,54 +555,38 @@ class _GridDesktopState extends State<GridDesktop>
     bool onSnapBar = false;
 
     if (_showSnapBar) {
-      if (isMobile) {
-        double barHeight = 400;
-        double barTop = (h / 2) - (barHeight / 2);
-        if (dx < 80 && dy > barTop && dy < barTop + barHeight) {
-          onSnapBar = true;
-          double relY = dy - barTop;
-          if (relY < 50) region = SnapRegion.left;
-          else if (relY < 100) region = SnapRegion.right;
-          else if (relY < 130) region = SnapRegion.none;
-          else if (relY < 180) region = SnapRegion.leftThird;
-          else if (relY < 230) region = SnapRegion.centerThird;
-          else if (relY < 280) region = SnapRegion.rightThird;
-          else if (relY < 310) region = SnapRegion.none;
-          else region = SnapRegion.top;
-        }
-      } else {
-        double centerX = w / 2;
-        double barWidth = 360;
-        double barStart = centerX - (barWidth / 2);
-        if (dy < padding.top + 100 && dx > barStart && dx < barStart + barWidth) {
-          onSnapBar = true;
-          double relX = dx - barStart;
-          if (relX < 50) region = SnapRegion.left;
-          else if (relX < 100) region = SnapRegion.right;
-          else if (relX < 120) region = SnapRegion.none;
-          else if (relX < 170) region = SnapRegion.leftThird;
-          else if (relX < 220) region = SnapRegion.centerThird;
-          else if (relX < 270) region = SnapRegion.rightThird;
-          else if (relX < 290) region = SnapRegion.none;
-          else region = SnapRegion.top;
-        }
+      final double centerX = w / 2;
+      const double barWidth = 360;
+      final double barStart = centerX - (barWidth / 2);
+      if (dy < padding.top + 100 && dx > barStart && dx < barStart + barWidth) {
+        onSnapBar = true;
+        final double relX = dx - barStart;
+        if (relX < 50) region = SnapRegion.left;
+        else if (relX < 100) region = SnapRegion.right;
+        else if (relX < 120) region = SnapRegion.none;
+        else if (relX < 170) region = SnapRegion.leftThird;
+        else if (relX < 220) region = SnapRegion.centerThird;
+        else if (relX < 270) region = SnapRegion.rightThird;
+        else if (relX < 290) region = SnapRegion.none;
+        else region = SnapRegion.top;
       }
     }
 
     if (!onSnapBar) {
       const double cornerZone = 50.0;
       const double edgeZone = 20.0;
+      final double h = screenSize.height;
 
       if (dx < cornerZone && dy < cornerZone + padding.top) region = SnapRegion.topLeft;
       else if (dx > w - cornerZone && dy < cornerZone + padding.top) region = SnapRegion.topRight;
       else if (dx < cornerZone && dy > h - cornerZone) region = SnapRegion.bottomLeft;
       else if (dx > w - cornerZone && dy > h - cornerZone) region = SnapRegion.bottomRight;
-      else if (!isMobile && dy < padding.top + 5) region = SnapRegion.top;
+      else if (dy < padding.top + 5) region = SnapRegion.top;
       else if (dy > h - edgeZone) {
         if (dx < w * 0.3) region = SnapRegion.leftThird;
         else if (dx > w * 0.7) region = SnapRegion.rightThird;
         else region = SnapRegion.centerThird;
-      } else if (dx < edgeZone && !isMobile) region = SnapRegion.left;
+      } else if (dx < edgeZone) region = SnapRegion.left;
       else if (dx > w - edgeZone) region = SnapRegion.right;
     }
 
@@ -574,6 +598,14 @@ class _GridDesktopState extends State<GridDesktop>
       _isDragging = false;
       _showSnapBar = false;
     });
+
+    final bool isMobile = screenSize.width < 700;
+    if (isMobile) {
+      if (activeSnapRegion != SnapRegion.none) {
+        setState(() => activeSnapRegion = SnapRegion.none);
+      }
+      return;
+    }
 
     if (activeSnapRegion == SnapRegion.none) return;
     final index = windows.indexWhere((w) => w.id == id);
@@ -663,6 +695,8 @@ class _GridDesktopState extends State<GridDesktop>
             final bool isMobile = desktopSize.width < 700;
             final bool lockBackgroundScroll =
                 windows.any((window) => window.isMaximized && !window.isMinimized);
+            final bool blockBackgroundInput =
+                lockBackgroundScroll;
             const double backgroundScrollbarThickness = 10;
             const double backgroundDragInset = backgroundScrollbarThickness + 4;
             const Color backgroundScrollbarThumbColor = Color(0xFF6B7078);
@@ -684,9 +718,9 @@ class _GridDesktopState extends State<GridDesktop>
                   notificationPredicate: (notification) =>
                       notification.depth == 1 &&
                       notification.metrics.axis == Axis.horizontal,
-                  thumbVisibility: !lockBackgroundScroll,
-                  trackVisibility: !lockBackgroundScroll,
-                  interactive: !lockBackgroundScroll,
+                  thumbVisibility: !blockBackgroundInput && !isMobile,
+                  trackVisibility: !blockBackgroundInput && !isMobile,
+                  interactive: !blockBackgroundInput && !isMobile,
                   scrollbarOrientation: ScrollbarOrientation.bottom,
                   thickness: backgroundScrollbarThickness,
                   radius: const Radius.circular(10),
@@ -698,9 +732,9 @@ class _GridDesktopState extends State<GridDesktop>
                     notificationPredicate: (notification) =>
                         notification.depth == 0 &&
                         notification.metrics.axis == Axis.vertical,
-                    thumbVisibility: !lockBackgroundScroll,
-                    trackVisibility: !lockBackgroundScroll,
-                    interactive: !lockBackgroundScroll,
+                    thumbVisibility: !blockBackgroundInput && !isMobile,
+                    trackVisibility: !blockBackgroundInput && !isMobile,
+                    interactive: !blockBackgroundInput && !isMobile,
                     thickness: backgroundScrollbarThickness,
                     radius: const Radius.circular(10),
                     thumbColor: backgroundScrollbarThumbColor,
@@ -708,13 +742,13 @@ class _GridDesktopState extends State<GridDesktop>
                     trackBorderColor: backgroundScrollbarTrackBorderColor,
                     child: SingleChildScrollView(
                       controller: _verticalScrollController,
-                      physics: lockBackgroundScroll
+                      physics: blockBackgroundInput
                           ? const NeverScrollableScrollPhysics()
                           : const ClampingScrollPhysics(),
                       scrollDirection: Axis.vertical,
                       child: SingleChildScrollView(
                         controller: _horizontalScrollController,
-                        physics: lockBackgroundScroll
+                        physics: blockBackgroundInput
                             ? const NeverScrollableScrollPhysics()
                             : const ClampingScrollPhysics(),
                         scrollDirection: Axis.horizontal,
@@ -734,7 +768,7 @@ class _GridDesktopState extends State<GridDesktop>
                                       ),
                                     ),
                               ),
-                              if (!lockBackgroundScroll)
+                              if (!blockBackgroundInput && !isMobile)
                                 Positioned.fill(
                                   right: backgroundDragInset,
                                   bottom: backgroundDragInset,
@@ -778,7 +812,21 @@ class _GridDesktopState extends State<GridDesktop>
                                   onClose: () => closeWindow(window.id),
                                   onMaximize: () => toggleMaximize(window.id, desktopSize, padding),
                                   onMinimize: () => toggleMinimize(window.id),
-                                  onUpdate: (rect) => setState(() => window.rect = rect),
+                                  onUpdate: (rect) {
+                                    setState(() {
+                                      if (isMobile && !window.isMaximized && !window.isMinimized) {
+                                        final Rect safe = _getSafeRect(
+                                          desktopSize,
+                                          padding,
+                                          offsetX: _horizontalOffset(),
+                                          offsetY: _verticalOffset(),
+                                        );
+                                        window.rect = _fitRectInsideSafeRect(rect, safe);
+                                      } else {
+                                        window.rect = rect;
+                                      }
+                                    });
+                                  },
                                   onDragUpdate: (d) => onWindowDragUpdate(window.id, d, desktopSize, padding),
                                   onDragEnd: () => onWindowDragEnd(window.id, desktopSize, padding),
                                 );

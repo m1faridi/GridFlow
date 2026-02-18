@@ -66,6 +66,10 @@ class FastWindow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool isDesktopPlatform =
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux;
     final bool canResize = !window.isMaximized && !window.isMinimized;
 
     final Set<HandlePosition> allHandles = {
@@ -78,7 +82,12 @@ class FastWindow extends StatelessWidget {
       HandlePosition.left,
       HandlePosition.right,
     };
-
+    final Set<HandlePosition> mobileHandles = {
+      HandlePosition.topLeft,
+      HandlePosition.topRight,
+      HandlePosition.bottomLeft,
+      HandlePosition.bottomRight,
+    };
     // مهم‌ترین اصلاح:
     // محتوای پنجره را با WindowScope wrap می‌کنیم تا داخل محتوا WindowScope.of(context) کار کند.
     final Widget scopedContent = WindowScope(
@@ -91,22 +100,30 @@ class FastWindow extends StatelessWidget {
       constraints: window.isMinimized
           ? BoxConstraints.tight(const Size(220, 60))
           : const BoxConstraints(minWidth: 200, minHeight: 150),
-      enabledHandles: canResize ? allHandles : {},
-      visibleHandles: canResize ? allHandles : const {},
+      enabledHandles: canResize
+          ? (isDesktopPlatform ? allHandles : mobileHandles)
+          : {},
+      visibleHandles: canResize
+          ? (isDesktopPlatform ? allHandles : mobileHandles)
+          : const {},
       cornerHandleBuilder: (context, handle) {
-        return MouseRegion(
-          cursor: _cornerCursor(handle),
-          child: const SizedBox.expand(),
-        );
+        if (isDesktopPlatform) {
+          return MouseRegion(
+            cursor: _cornerCursor(handle),
+            child: const SizedBox.expand(),
+          );
+        }
+        return const SizedBox.expand();
       },
-      sideHandleBuilder: (context, handle) {
-        return MouseRegion(
-          cursor: _sideCursor(handle),
-          child: const SizedBox.expand(),
-        );
-      },
+      sideHandleBuilder: (context, handle) => isDesktopPlatform
+          ? MouseRegion(
+              cursor: _sideCursor(handle),
+              child: const SizedBox.expand(),
+            )
+          : const SizedBox.expand(),
       handleAlignment: HandleAlignment.center,
-      handleTapSize: 24,
+      handleTapSize: isDesktopPlatform ? 36 : 20,
+      draggable: false,
       onResizeStart: (_, event) {
         if (!window.isFocused) {
           onFocus();
@@ -166,7 +183,7 @@ class FastWindow extends StatelessWidget {
         }
 
         // --- بخش ۲: بدنه پنجره ---
-        return Material(
+        final Widget windowBody = Material(
           color: Colors.transparent,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 100),
@@ -175,18 +192,18 @@ class FastWindow extends StatelessWidget {
               borderRadius: BorderRadius.circular(window.isMaximized ? 0 : 16),
               boxShadow: window.isFocused && !window.isMaximized
                   ? [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.25),
-                  blurRadius: 30,
-                  spreadRadius: 0,
-                ),
-              ]
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.25),
+                        blurRadius: 30,
+                        spreadRadius: 0,
+                      ),
+                    ]
                   : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.1),
-                  blurRadius: 10,
-                ),
-              ],
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 10,
+                      ),
+                    ],
               border: Border.all(
                 color: (window.isFocused && !window.isMaximized)
                     ? Colors.blueAccent.withValues(alpha: 0.3)
@@ -200,11 +217,19 @@ class FastWindow extends StatelessWidget {
                 : _buildWithoutTitleBar(scopedContent),
           ),
         );
+
+        return windowBody;
       },
     );
   }
 
   Widget _buildWithTitleBar(Widget scopedContent) {
+    const double toolbarHeight = 30;
+    const double toolbarHorizontalPadding = 8;
+    const double titleFontSize = 12;
+    const double controlButtonSize = 24;
+    const double controlIconSize = 14;
+    const double maximizeIconSize = 13;
     final bool isFocused = window.isFocused;
     final Color titleBarBaseColor =
         isFocused ? const Color(0xFF2C313A) : const Color(0xFF1E232A);
@@ -230,7 +255,7 @@ class FastWindow extends StatelessWidget {
           onPanUpdate: onDragUpdate,
           onPanEnd: (_) => onDragEnd(),
           child: Container(
-            height: 25,
+            height: toolbarHeight,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
@@ -241,14 +266,14 @@ class FastWindow extends StatelessWidget {
                 bottom: BorderSide(color: bottomLineColor, width: 1),
               ),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            padding: EdgeInsets.symmetric(horizontal: toolbarHorizontalPadding),
             child: Row(
               children: [
                 Expanded(
                   child: Text(
                     window.title,
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: titleFontSize,
                       fontWeight: FontWeight.w600,
                       color: titleTextColor,
                     ),
@@ -257,13 +282,16 @@ class FastWindow extends StatelessWidget {
                 IconButton(
                   icon: Icon(
                     CupertinoIcons.minus,
-                    size: 16,
+                    size: controlIconSize,
                     color: iconColor,
                   ),
                   visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                  constraints: BoxConstraints.tightFor(
+                    width: controlButtonSize,
+                    height: controlButtonSize,
+                  ),
                   padding: EdgeInsets.zero,
-                  splashRadius: 16,
+                  splashRadius: controlButtonSize / 2,
                   onPressed: onMinimize,
                 ),
                 IconButton(
@@ -272,12 +300,15 @@ class FastWindow extends StatelessWidget {
                         ? CupertinoIcons.arrow_down_right_arrow_up_left
                         : CupertinoIcons.crop,
                     color: iconColor,
-                    size: 15,
+                    size: maximizeIconSize,
                   ),
                   visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                  constraints: BoxConstraints.tightFor(
+                    width: controlButtonSize,
+                    height: controlButtonSize,
+                  ),
                   padding: EdgeInsets.zero,
-                  splashRadius: 16,
+                  splashRadius: controlButtonSize / 2,
                   onPressed: onMaximize,
                 ),
                 if (window.isClosable)
@@ -285,12 +316,15 @@ class FastWindow extends StatelessWidget {
                     icon: Icon(
                       CupertinoIcons.xmark,
                       color: iconColor,
-                      size: 16,
+                      size: controlIconSize,
                     ),
                     visualDensity: VisualDensity.compact,
-                    constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                    constraints: BoxConstraints.tightFor(
+                      width: controlButtonSize,
+                      height: controlButtonSize,
+                    ),
                     padding: EdgeInsets.zero,
-                    splashRadius: 16,
+                    splashRadius: controlButtonSize / 2,
                     onPressed: onClose,
                   ),
               ],
@@ -303,10 +337,6 @@ class FastWindow extends StatelessWidget {
             onTapDown: (_) {
               if (!window.isFocused) onFocus();
             },
-            // این‌ها عمداً خالی هستند تا درگ محتوا، درگ پنجره را خراب نکند
-            onPanStart: (_) {},
-            onPanUpdate: (_) {},
-            onPanEnd: (_) {},
             child: AbsorbPointer(
               absorbing: !window.isFocused,
               child: scopedContent,
@@ -326,9 +356,6 @@ class FastWindow extends StatelessWidget {
             onTapDown: (_) {
               if (!window.isFocused) onFocus();
             },
-            onPanStart: (_) {},
-            onPanUpdate: (_) {},
-            onPanEnd: (_) {},
             child: AbsorbPointer(
               absorbing: !window.isFocused,
               child: scopedContent,
@@ -336,14 +363,11 @@ class FastWindow extends StatelessWidget {
           ),
         ),
 
-        // نوار درگ نامرئی
-        // نکته: height=0 هیچ سطحی برای گرفتن gesture نمی‌دهد.
-        // اگر می‌خواهی واقعاً قابل درگ باشد، حداقل 24 یا 28 بگذار.
         Positioned(
           top: 0,
           left: 0,
           right: 0,
-          height: 28, // اصلاح شد (قبلاً 0 بود)
+          height: 30,
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
             onTapDown: (_) {
