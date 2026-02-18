@@ -137,45 +137,48 @@ class FastWindow extends StatelessWidget {
       contentBuilder: (context, rect, flip) {
         // --- بخش ۱: حالت مینیمایز ---
         if (window.isMinimized) {
-          return GestureDetector(
-            onTap: onMinimize,
-            onPanStart: (_) => onFocus(),
-            onPanUpdate: onDragUpdate,
-            onPanEnd: (_) => onDragEnd(),
-            child: Material(
-              color: Colors.transparent,
-              elevation: 8,
-              borderRadius: BorderRadius.circular(30),
-              child: Container(
-                width: 220,
-                height: 60,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: window.themeColor, width: 2),
-                ),
-                child: Row(
-                  children: [
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        window.title,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
+          return Listener(
+            behavior: HitTestBehavior.opaque,
+            child: GestureDetector(
+              onTap: onMinimize,
+              onPanStart: (_) => onFocus(),
+              onPanUpdate: onDragUpdate,
+              onPanEnd: (_) => onDragEnd(),
+              child: Material(
+                color: Colors.transparent,
+                elevation: 8,
+                borderRadius: BorderRadius.circular(30),
+                child: Container(
+                  width: 220,
+                  height: 60,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(color: window.themeColor, width: 2),
+                  ),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          window.title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(
-                      CupertinoIcons.chevron_up,
-                      size: 16,
-                      color: Colors.grey,
-                    ),
-                  ],
+                      const SizedBox(width: 4),
+                      const Icon(
+                        CupertinoIcons.chevron_up,
+                        size: 16,
+                        color: Colors.grey,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -218,7 +221,10 @@ class FastWindow extends StatelessWidget {
           ),
         );
 
-        return windowBody;
+        return Listener(
+          behavior: HitTestBehavior.opaque,
+          child: windowBody,
+        );
       },
     );
   }

@@ -738,15 +738,11 @@ class _GridDesktopState extends State<GridDesktop>
                     trackBorderColor: backgroundScrollbarTrackBorderColor,
                     child: SingleChildScrollView(
                       controller: _verticalScrollController,
-                      physics: blockBackgroundInput
-                          ? const NeverScrollableScrollPhysics()
-                          : const ClampingScrollPhysics(),
+                      physics: const NeverScrollableScrollPhysics(),
                       scrollDirection: Axis.vertical,
                       child: SingleChildScrollView(
                         controller: _horizontalScrollController,
-                        physics: blockBackgroundInput
-                            ? const NeverScrollableScrollPhysics()
-                            : const ClampingScrollPhysics(),
+                        physics: const NeverScrollableScrollPhysics(),
                         scrollDirection: Axis.horizontal,
                         child: SizedBox(
                           width: canvasWidth,
@@ -764,12 +760,12 @@ class _GridDesktopState extends State<GridDesktop>
                                       ),
                                     ),
                               ),
-                              if (!blockBackgroundInput && !isMobile)
+                              if (!blockBackgroundInput)
                                 Positioned.fill(
                                   right: backgroundDragInset,
                                   bottom: backgroundDragInset,
                                   child: GestureDetector(
-                                    behavior: HitTestBehavior.translucent,
+                                    behavior: HitTestBehavior.opaque,
                                     onPanUpdate: _panCanvas,
                                     child: const SizedBox.expand(),
                                   ),
