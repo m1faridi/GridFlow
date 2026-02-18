@@ -277,7 +277,6 @@ class _GridDesktopState extends State<GridDesktop>
     final completer = Completer<dynamic>();
     Rect? openedRect;
     bool openedAsMaximized = false;
-    bool openedOnMobile = false;
 
     setState(() {
       final size = MediaQuery.of(context).size;
@@ -293,7 +292,6 @@ class _GridDesktopState extends State<GridDesktop>
       final bool finalHasTitleBar = widget.hasTitleBar && appHasTitleBar;
 
       final bool isMobile = size.width < 700;
-      openedOnMobile = isMobile;
       bool startMaximized = isMobile && windows.isEmpty;
 
       WindowItem? parentWindow;
@@ -345,9 +343,7 @@ class _GridDesktopState extends State<GridDesktop>
             targetWidth,
             targetHeight,
           );
-          startRect = isMobile
-              ? _fitRectInsideSafeRect(rightOfCurrent, safeRect)
-              : rightOfCurrent;
+          startRect = rightOfCurrent;
         } else {
           startRect = _fitRectInsideSafeRect(
             Rect.fromLTWH(safeRect.left, safeRect.top, targetWidth, targetHeight),
@@ -413,7 +409,7 @@ class _GridDesktopState extends State<GridDesktop>
       focusWindow(newId);
     });
 
-    if (openedRect != null && !openedAsMaximized && !openedOnMobile) {
+    if (openedRect != null && !openedAsMaximized) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _ensureWindowVisible(
           openedRect!,
