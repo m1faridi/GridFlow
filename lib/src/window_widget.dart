@@ -34,18 +34,30 @@ class FastWindow extends StatelessWidget {
   });
 
   MouseCursor _cornerCursor(HandlePosition handle) {
-    final bool isMacOs = defaultTargetPlatform == TargetPlatform.macOS;
+    if (defaultTargetPlatform == TargetPlatform.macOS) {
+      switch (handle) {
+        case HandlePosition.topLeft:
+        case HandlePosition.topRight:
+          return SystemMouseCursors.resizeUp;
+        case HandlePosition.bottomLeft:
+        case HandlePosition.bottomRight:
+          return SystemMouseCursors.resizeDown;
+        default:
+          return SystemMouseCursors.basic;
+      }
+    }
+
     switch (handle) {
       case HandlePosition.topLeft:
       case HandlePosition.bottomRight:
-        return isMacOs
-            ? SystemMouseCursors.resizeLeftRight
-            : SystemMouseCursors.resizeUpLeftDownRight;
+      // این برای خط مورب \ است (مثل عکس شما)
+        return SystemMouseCursors.resizeUpLeftDownRight;
+
       case HandlePosition.topRight:
       case HandlePosition.bottomLeft:
-        return isMacOs
-            ? SystemMouseCursors.resizeUpDown
-            : SystemMouseCursors.resizeUpRightDownLeft;
+      // این برای خط مورب / است
+        return SystemMouseCursors.resizeUpRightDownLeft;
+
       default:
         return SystemMouseCursors.basic;
     }
@@ -71,6 +83,7 @@ class FastWindow extends StatelessWidget {
         defaultTargetPlatform == TargetPlatform.windows ||
         defaultTargetPlatform == TargetPlatform.linux;
     final bool canResize = !window.isMaximized && !window.isMinimized;
+    final double resizeHandleTapSize = isDesktopPlatform ? 20 : 28;
 
     final Set<HandlePosition> allHandles = {
       HandlePosition.topLeft,
@@ -122,7 +135,7 @@ class FastWindow extends StatelessWidget {
             )
           : const SizedBox.expand(),
       handleAlignment: HandleAlignment.center,
-      handleTapSize: isDesktopPlatform ? 36 : 20,
+      handleTapSize: resizeHandleTapSize,
       draggable: false,
       onResizeStart: (_, event) {
         if (!window.isFocused) {
@@ -236,6 +249,11 @@ class FastWindow extends StatelessWidget {
     const double controlButtonSize = 24;
     const double controlIconSize = 14;
     const double maximizeIconSize = 13;
+    final bool isDesktopPlatform =
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux;
+    final double controlButtonGap = isDesktopPlatform ? 5 : 2;
     final bool isFocused = window.isFocused;
     final Color titleBarBaseColor =
         isFocused ? const Color(0xFF2C313A) : const Color(0xFF1E232A);
@@ -300,6 +318,7 @@ class FastWindow extends StatelessWidget {
                   splashRadius: controlButtonSize / 2,
                   onPressed: onMinimize,
                 ),
+                SizedBox(width: controlButtonGap),
                 IconButton(
                   icon: Icon(
                     window.isMaximized
@@ -317,7 +336,8 @@ class FastWindow extends StatelessWidget {
                   splashRadius: controlButtonSize / 2,
                   onPressed: onMaximize,
                 ),
-                if (window.isClosable)
+                if (window.isClosable) ...[
+                  SizedBox(width: controlButtonGap),
                   IconButton(
                     icon: Icon(
                       CupertinoIcons.xmark,
@@ -333,6 +353,7 @@ class FastWindow extends StatelessWidget {
                     splashRadius: controlButtonSize / 2,
                     onPressed: onClose,
                   ),
+                ],
               ],
             ),
           ),
