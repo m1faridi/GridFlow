@@ -89,10 +89,23 @@ class _GridDesktopState extends State<GridDesktop>
   static const double _maxBackgroundScale = 1.4;
   static const double _doubleTapZoomFactor = 1.18;
   static const double _canvasHeadroom = 8000.0;
+  static const double _edgeAutoScrollBaseSpeed = 180.0;
+  static const double _edgeAutoScrollMaxSpeed = 1080.0;
+  static const double _edgeAutoScrollRampDistance = 180.0;
+  static const double _edgeAutoScrollActivationEpsilon = 1.0;
+  static const double _edgeAutoScrollAcceleration = 3400.0;
+  static const double _edgeAutoScrollDeceleration = 4800.0;
+  static const double _smallScreenEdgeAutoScrollMultiplier = 3.0;
 
   late final ScrollController _horizontalScrollController;
   late final ScrollController _verticalScrollController;
   final GlobalKey _canvasViewportKey = GlobalKey();
+  Timer? _edgeAutoScrollTimer;
+  String? _activeDragWindowId;
+  Size? _activeDragScreenSize;
+  EdgeInsets? _activeDragPadding;
+  Offset _edgeAutoScrollVelocity = Offset.zero;
+  DateTime? _edgeAutoScrollLastTickAt;
 
   double _backgroundScale = 1.0;
   Offset _backgroundOffset = Offset.zero;
@@ -143,6 +156,7 @@ class _GridDesktopState extends State<GridDesktop>
 
   @override
   void dispose() {
+    _stopEdgeAutoScrollLoop();
     _horizontalScrollController.dispose();
     _verticalScrollController.dispose();
     _lineAnimationController.dispose();
@@ -287,6 +301,240 @@ class _GridDesktopState extends State<GridDesktop>
       if (target != position.pixels) {
         _verticalScrollController.jumpTo(target);
       }
+    }
+  }
+
+  Rect _worldRectToViewportRect(Rect worldRect) {
+    final double scale = _backgroundScale <= 0 ? 1.0 : _backgroundScale;
+    final double left = (worldRect.left * scale) + _backgroundOffset.dx;
+    final double top = (worldRect.top * scale) + _backgroundOffset.dy;
+    final double right = (worldRect.right * scale) + _backgroundOffset.dx;
+    final double bottom = (worldRect.bottom * scale) + _backgroundOffset.dy;
+    return Rect.fromLTRB(left, top, right, bottom);
+  }
+
+  double _edgeScrollSpeedFromOverlap(double overlap) {
+    if (overlap <= 0.0) return 0.0;
+    final double t = (overlap / _edgeAutoScrollRampDistance)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final double eased = Curves.easeOutCubic.transform(t);
+    return _edgeAutoScrollBaseSpeed +
+        ((_edgeAutoScrollMaxSpeed - _edgeAutoScrollBaseSpeed) * eased);
+  }
+
+  Offset _computeEdgeAutoScrollForWindow(
+    Rect worldRect,
+    Size screenSize,
+    EdgeInsets padding,
+  ) {
+    double desiredDx = 0.0;
+    double desiredDy = 0.0;
+    final bool isSmallScreen = screenSize.width < 700;
+    final double speedMultiplier = isSmallScreen
+        ? _smallScreenEdgeAutoScrollMultiplier
+        : 1.0;
+
+    final Rect windowViewportRect = _worldRectToViewportRect(worldRect);
+    final double visibleLeft = _horizontalOffset() + padding.left;
+    final double visibleTop = _verticalOffset() + padding.top;
+    final double visibleRight =
+        visibleLeft + (screenSize.width - padding.left - padding.right);
+    final double visibleBottom =
+        visibleTop + (screenSize.height - padding.top - padding.bottom);
+
+    final double triggerRight = visibleRight - _edgeAutoScrollActivationEpsilon;
+    final double triggerLeft = visibleLeft + _edgeAutoScrollActivationEpsilon;
+    final double triggerBottom =
+        visibleBottom - _edgeAutoScrollActivationEpsilon;
+    final double triggerTop = visibleTop + _edgeAutoScrollActivationEpsilon;
+
+    if (windowViewportRect.right >= triggerRight) {
+      final double overlap = windowViewportRect.right - triggerRight;
+      desiredDx = _edgeScrollSpeedFromOverlap(overlap);
+    } else if (windowViewportRect.left <= triggerLeft) {
+      final double overlap = triggerLeft - windowViewportRect.left;
+      desiredDx = -_edgeScrollSpeedFromOverlap(overlap);
+    }
+
+    if (windowViewportRect.bottom >= triggerBottom) {
+      final double overlap = windowViewportRect.bottom - triggerBottom;
+      desiredDy = _edgeScrollSpeedFromOverlap(overlap);
+    } else if (windowViewportRect.top <= triggerTop) {
+      final double overlap = triggerTop - windowViewportRect.top;
+      desiredDy = -_edgeScrollSpeedFromOverlap(overlap);
+    }
+
+    return Offset(desiredDx * speedMultiplier, desiredDy * speedMultiplier);
+  }
+
+  Offset _applyViewportAutoScroll(Offset desiredDelta) {
+    double appliedDx = 0.0;
+    double appliedDy = 0.0;
+
+    if (desiredDelta.dx != 0.0 && _horizontalScrollController.hasClients) {
+      final pos = _horizontalScrollController.position;
+      final target = (pos.pixels + desiredDelta.dx)
+          .clamp(pos.minScrollExtent, pos.maxScrollExtent)
+          .toDouble();
+      appliedDx = target - pos.pixels;
+      if (appliedDx != 0.0) {
+        _horizontalScrollController.jumpTo(target);
+      }
+    }
+
+    if (desiredDelta.dy != 0.0 && _verticalScrollController.hasClients) {
+      final pos = _verticalScrollController.position;
+      final target = (pos.pixels + desiredDelta.dy)
+          .clamp(pos.minScrollExtent, pos.maxScrollExtent)
+          .toDouble();
+      appliedDy = target - pos.pixels;
+      if (appliedDy != 0.0) {
+        _verticalScrollController.jumpTo(target);
+      }
+    }
+
+    return Offset(appliedDx, appliedDy);
+  }
+
+  bool _isNearZeroDelta(Offset value) {
+    return value.dx.abs() < 0.01 && value.dy.abs() < 0.01;
+  }
+
+  bool _isNearZeroVelocity(Offset value) {
+    return value.dx.abs() < 0.5 && value.dy.abs() < 0.5;
+  }
+
+  double _stepEdgeVelocity(double current, double target, double dtSeconds) {
+    final double delta = target - current;
+    if (delta == 0.0) return target;
+
+    final bool accelerating =
+        current.sign == target.sign && target.abs() > current.abs();
+    final double maxDelta =
+        (accelerating
+                ? _edgeAutoScrollAcceleration
+                : _edgeAutoScrollDeceleration) *
+            dtSeconds;
+
+    if (delta.abs() <= maxDelta) {
+      return target;
+    }
+    return current + (delta.sign * maxDelta);
+  }
+
+  bool _rectNearlyEquals(Rect a, Rect b) {
+    const double epsilon = 0.01;
+    return (a.left - b.left).abs() < epsilon &&
+        (a.top - b.top).abs() < epsilon &&
+        (a.right - b.right).abs() < epsilon &&
+        (a.bottom - b.bottom).abs() < epsilon;
+  }
+
+  void _ensureEdgeAutoScrollLoop() {
+    _edgeAutoScrollLastTickAt ??= DateTime.now();
+    _edgeAutoScrollTimer ??= Timer.periodic(
+      const Duration(milliseconds: 16),
+      (_) => _tickEdgeAutoScroll(),
+    );
+  }
+
+  void _stopEdgeAutoScrollLoop() {
+    _edgeAutoScrollTimer?.cancel();
+    _edgeAutoScrollTimer = null;
+    _activeDragWindowId = null;
+    _activeDragScreenSize = null;
+    _activeDragPadding = null;
+    _edgeAutoScrollVelocity = Offset.zero;
+    _edgeAutoScrollLastTickAt = null;
+  }
+
+  void _tickEdgeAutoScroll() {
+    if (!mounted) {
+      _stopEdgeAutoScrollLoop();
+      return;
+    }
+
+    final String? id = _activeDragWindowId;
+    final Size? screenSize = _activeDragScreenSize;
+    final EdgeInsets? padding = _activeDragPadding;
+    if (id == null || screenSize == null || padding == null) return;
+
+    final int index = windows.indexWhere((w) => w.id == id);
+    if (index == -1) {
+      _stopEdgeAutoScrollLoop();
+      return;
+    }
+
+    final WindowItem window = windows[index];
+    if (window.isMaximized) return;
+
+    final DateTime now = DateTime.now();
+    final DateTime? previousTickAt = _edgeAutoScrollLastTickAt;
+    _edgeAutoScrollLastTickAt = now;
+    final double dtSeconds =
+        (previousTickAt == null
+                ? (1 / 60)
+                : now.difference(previousTickAt).inMicroseconds / 1000000)
+            .clamp(1 / 120, 1 / 20)
+            .toDouble();
+
+    final bool isMobile = screenSize.width < 700;
+    final Offset targetAutoScroll = _computeEdgeAutoScrollForWindow(
+      window.rect,
+      screenSize,
+      padding,
+    );
+    _edgeAutoScrollVelocity = Offset(
+      _stepEdgeVelocity(
+        _edgeAutoScrollVelocity.dx,
+        targetAutoScroll.dx,
+        dtSeconds,
+      ),
+      _stepEdgeVelocity(
+        _edgeAutoScrollVelocity.dy,
+        targetAutoScroll.dy,
+        dtSeconds,
+      ),
+    );
+
+    if (_isNearZeroVelocity(targetAutoScroll) &&
+        _isNearZeroVelocity(_edgeAutoScrollVelocity)) {
+      return;
+    }
+
+    final Offset autoScroll = _applyViewportAutoScroll(
+      Offset(
+        _edgeAutoScrollVelocity.dx * dtSeconds,
+        _edgeAutoScrollVelocity.dy * dtSeconds,
+      ),
+    );
+    if (_isNearZeroDelta(autoScroll)) return;
+
+    final double scale = _backgroundScale <= 0 ? 1.0 : _backgroundScale;
+    final Offset autoWorldDelta = Offset(
+      autoScroll.dx / scale,
+      autoScroll.dy / scale,
+    );
+
+    Rect nextRect = window.rect.shift(autoWorldDelta);
+    if (isMobile) {
+      final Rect safeAfterScroll = _getSafeRect(
+        screenSize,
+        padding,
+        offsetX: _horizontalOffset(),
+        offsetY: _verticalOffset(),
+      );
+      nextRect = _fitRectInsideSafeRect(nextRect, safeAfterScroll);
+    }
+    if (_rectNearlyEquals(nextRect, window.rect)) return;
+
+    setState(() {
+      window.rect = nextRect;
+    });
+
+    if (!isMobile) {
+      _rebaseWorldIfNeeded();
     }
   }
 
@@ -750,25 +998,31 @@ class _GridDesktopState extends State<GridDesktop>
     Size screenSize,
     EdgeInsets padding,
   ) {
+    _activeDragWindowId = id;
+    _activeDragScreenSize = screenSize;
+    _activeDragPadding = padding;
+    _ensureEdgeAutoScrollLoop();
+
     final index = windows.indexWhere((w) => w.id == id);
     if (index == -1) return;
     final window = windows[index];
     final bool isMobile = screenSize.width < 700;
-    final Rect safeRect = _getSafeRect(
-      screenSize,
-      padding,
-      offsetX: _horizontalOffset(),
-      offsetY: _verticalOffset(),
-    );
 
     if (!window.isMaximized) {
+      Rect nextRect = window.rect.shift(details.delta);
+
+      if (isMobile) {
+        final Rect safeAfterScroll = _getSafeRect(
+          screenSize,
+          padding,
+          offsetX: _horizontalOffset(),
+          offsetY: _verticalOffset(),
+        );
+        nextRect = _fitRectInsideSafeRect(nextRect, safeAfterScroll);
+      }
+
       setState(() {
-        final Rect shifted = window.rect.shift(details.delta);
-        if (isMobile) {
-          window.rect = _fitRectInsideSafeRect(shifted, safeRect);
-        } else {
-          window.rect = shifted;
-        }
+        window.rect = nextRect;
       });
 
       if (!isMobile) {
@@ -778,7 +1032,7 @@ class _GridDesktopState extends State<GridDesktop>
   }
 
   void onWindowDragEnd(String id, Size screenSize, EdgeInsets padding) {
-    // Snap behavior removed intentionally; drag now only repositions windows.
+    _stopEdgeAutoScrollLoop();
   }
 
   @override
