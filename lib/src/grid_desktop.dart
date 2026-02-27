@@ -96,9 +96,15 @@ class _GridDesktopState extends State<GridDesktop>
   static const double _edgeAutoScrollAcceleration = 3400.0;
   static const double _edgeAutoScrollDeceleration = 4800.0;
   static const double _smallScreenEdgeAutoScrollMultiplier = 3.0;
+  static const double _edgeDragVelocitySmoothing = 0.24;
+  static const double _edgeDragVelocityDecayPerSecond = 6.0;
+  static const double _edgeDragSpeedMin = 220.0;
+  static const double _edgeDragSpeedMax = 2200.0;
+  static const double _edgeDragInfluenceMax = 1.2;
 
   late final ScrollController _horizontalScrollController;
   late final ScrollController _verticalScrollController;
+  late final Listenable _backgroundMotionListenable;
   final GlobalKey _canvasViewportKey = GlobalKey();
   Timer? _edgeAutoScrollTimer;
   String? _activeDragWindowId;
@@ -106,6 +112,8 @@ class _GridDesktopState extends State<GridDesktop>
   EdgeInsets? _activeDragPadding;
   Offset _edgeAutoScrollVelocity = Offset.zero;
   DateTime? _edgeAutoScrollLastTickAt;
+  Offset _edgeDragVelocity = Offset.zero;
+  DateTime? _edgeDragLastSampleAt;
 
   double _backgroundScale = 1.0;
   Offset _backgroundOffset = Offset.zero;
@@ -123,6 +131,10 @@ class _GridDesktopState extends State<GridDesktop>
     super.initState();
     _horizontalScrollController = ScrollController();
     _verticalScrollController = ScrollController();
+    _backgroundMotionListenable = Listenable.merge([
+      _horizontalScrollController,
+      _verticalScrollController,
+    ]);
     _lineAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -447,6 +459,63 @@ class _GridDesktopState extends State<GridDesktop>
     _activeDragPadding = null;
     _edgeAutoScrollVelocity = Offset.zero;
     _edgeAutoScrollLastTickAt = null;
+    _edgeDragVelocity = Offset.zero;
+    _edgeDragLastSampleAt = null;
+  }
+
+  void _recordDragVelocity(Offset delta) {
+    final DateTime now = DateTime.now();
+    final DateTime? lastSampleAt = _edgeDragLastSampleAt;
+    _edgeDragLastSampleAt = now;
+    if (lastSampleAt == null) return;
+
+    final double dtSeconds = (now.difference(lastSampleAt).inMicroseconds /
+            1000000)
+        .clamp(1 / 240, 1 / 20)
+        .toDouble();
+    final Offset sampleVelocity = Offset(
+      delta.dx / dtSeconds,
+      delta.dy / dtSeconds,
+    );
+    _edgeDragVelocity = Offset(
+      _edgeDragVelocity.dx +
+          ((sampleVelocity.dx - _edgeDragVelocity.dx) *
+              _edgeDragVelocitySmoothing),
+      _edgeDragVelocity.dy +
+          ((sampleVelocity.dy - _edgeDragVelocity.dy) *
+              _edgeDragVelocitySmoothing),
+    );
+  }
+
+  double _dragSpeedMultiplierForTarget(Offset targetAutoScroll, DateTime now) {
+    if (_isNearZeroVelocity(targetAutoScroll)) return 1.0;
+
+    final DateTime? lastSampleAt = _edgeDragLastSampleAt;
+    if (lastSampleAt == null) return 1.0;
+
+    final double idleSeconds =
+        (now.difference(lastSampleAt).inMicroseconds / 1000000)
+            .clamp(0.0, 2.0)
+            .toDouble();
+    final double decay = math.exp(-idleSeconds * _edgeDragVelocityDecayPerSecond);
+    final Offset decayedVelocity = Offset(
+      _edgeDragVelocity.dx * decay,
+      _edgeDragVelocity.dy * decay,
+    );
+
+    final double targetLength = targetAutoScroll.distance;
+    if (targetLength <= 0.001) return 1.0;
+    final Offset targetDirection = targetAutoScroll / targetLength;
+    final double projectedForwardSpeed = math.max(
+      0.0,
+      (decayedVelocity.dx * targetDirection.dx) +
+          (decayedVelocity.dy * targetDirection.dy),
+    );
+    final double normalized = ((projectedForwardSpeed - _edgeDragSpeedMin) /
+            (_edgeDragSpeedMax - _edgeDragSpeedMin))
+        .clamp(0.0, 1.0)
+        .toDouble();
+    return 1.0 + (normalized * _edgeDragInfluenceMax);
   }
 
   void _tickEdgeAutoScroll() {
@@ -480,11 +549,16 @@ class _GridDesktopState extends State<GridDesktop>
             .toDouble();
 
     final bool isMobile = screenSize.width < 700;
-    final Offset targetAutoScroll = _computeEdgeAutoScrollForWindow(
+    final Offset baseTargetAutoScroll = _computeEdgeAutoScrollForWindow(
       window.rect,
       screenSize,
       padding,
     );
+    final double dragSpeedMultiplier = _dragSpeedMultiplierForTarget(
+      baseTargetAutoScroll,
+      now,
+    );
+    final Offset targetAutoScroll = baseTargetAutoScroll * dragSpeedMultiplier;
     _edgeAutoScrollVelocity = Offset(
       _stepEdgeVelocity(
         _edgeAutoScrollVelocity.dx,
@@ -1002,6 +1076,7 @@ class _GridDesktopState extends State<GridDesktop>
     _activeDragScreenSize = screenSize;
     _activeDragPadding = padding;
     _ensureEdgeAutoScrollLoop();
+    _recordDragVelocity(details.delta);
 
     final index = windows.indexWhere((w) => w.id == id);
     if (index == -1) return;
@@ -1079,18 +1154,30 @@ class _GridDesktopState extends State<GridDesktop>
               canvasHeight = math.max(canvasHeight, rect.bottom + 200);
             }
             final canvasSize = Size(canvasWidth, canvasHeight);
-            final Offset worldTranslation = Offset(
-              _backgroundOffset.dx - (_horizontalOffset() * _backgroundScale),
-              _backgroundOffset.dy - (_verticalOffset() * _backgroundScale),
-            );
-
             return Stack(
               fit: StackFit.expand,
               children: [
                 Positioned.fill(
                   child: IgnorePointer(
-                    child: widget.background != null
-                        ? ClipRect(
+                    child: AnimatedBuilder(
+                      animation: _backgroundMotionListenable,
+                      child: widget.background != null
+                          ? SizedBox(
+                              width: canvasWidth,
+                              height: canvasHeight,
+                              child: widget.background!,
+                            )
+                          : null,
+                      builder: (context, backgroundChild) {
+                        final Offset worldTranslation = Offset(
+                          _backgroundOffset.dx -
+                              (_horizontalOffset() * _backgroundScale),
+                          _backgroundOffset.dy -
+                              (_verticalOffset() * _backgroundScale),
+                        );
+
+                        if (widget.background != null) {
+                          return ClipRect(
                             child: Transform(
                               transform:
                                   Matrix4.diagonal3Values(
@@ -1102,22 +1189,22 @@ class _GridDesktopState extends State<GridDesktop>
                                     worldTranslation.dy,
                                     0.0,
                                   ),
-                              child: SizedBox(
-                                width: canvasWidth,
-                                height: canvasHeight,
-                                child: widget.background!,
-                              ),
+                              child: backgroundChild,
                             ),
-                          )
-                        : ColoredBox(
-                            color: const Color(0xFF1E1E1E),
-                            child: CustomPaint(
-                              painter: GridPatternPainter(
-                                scale: _backgroundScale,
-                                translation: worldTranslation,
-                              ),
+                          );
+                        }
+
+                        return ColoredBox(
+                          color: const Color(0xFF1E1E1E),
+                          child: CustomPaint(
+                            painter: GridPatternPainter(
+                              scale: _backgroundScale,
+                              translation: worldTranslation,
                             ),
                           ),
+                        );
+                      },
+                    ),
                   ),
                 ),
                 RawScrollbar(
