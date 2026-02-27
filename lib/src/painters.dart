@@ -4,27 +4,50 @@ import 'package:flutter/material.dart';
 import 'models.dart';
 
 class GridPatternPainter extends CustomPainter {
+  final double scale;
+  final Offset translation;
+  final double baseStep;
+  final Color lineColor;
+
+  const GridPatternPainter({
+    this.scale = 1.0,
+    this.translation = Offset.zero,
+    this.baseStep = 40.0,
+    this.lineColor = const Color(0x08FFFFFF),
+  });
+
+  double _startLine(double offset, double step) {
+    final double mod = offset % step;
+    return mod <= 0 ? mod : mod - step;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.03) // کمرنگ‌تر و شیک‌تر
+      ..color = lineColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
 
-    const double step = 40.0;
+    final double normalizedScale = scale <= 0 ? 1.0 : scale;
+    final double step = max(4.0, baseStep * normalizedScale);
+    final double startX = _startLine(translation.dx, step);
+    final double startY = _startLine(translation.dy, step);
 
-    // کشیدن نقاط تقاطع به جای خط کامل (مثل طراحی‌های مدرن)
-    // یا خطوط خیلی محو
-    for (double x = 0; x < size.width; x += step) {
+    for (double x = startX; x <= size.width; x += step) {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
     }
-    for (double y = 0; y < size.height; y += step) {
+    for (double y = startY; y <= size.height; y += step) {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
     }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant GridPatternPainter oldDelegate) {
+    return oldDelegate.scale != scale ||
+        oldDelegate.translation != translation ||
+        oldDelegate.baseStep != baseStep ||
+        oldDelegate.lineColor != lineColor;
+  }
 }
 
 class ConnectionsPainter extends CustomPainter {
@@ -51,7 +74,10 @@ class ConnectionsPainter extends CustomPainter {
       if (groupMembers.length < 2) return;
 
       // مرتب‌سازی بر اساس موقعیت برای پیدا کردن بهترین مسیر
-      groupMembers.sort((a, b) => (a.rect.top + a.rect.left).compareTo(b.rect.top + b.rect.left));
+      groupMembers.sort(
+        (a, b) =>
+            (a.rect.top + a.rect.left).compareTo(b.rect.top + b.rect.left),
+      );
 
       // الگوریتم "نزدیک‌ترین همسایه" (Nearest Neighbor)
       // این بخش تضمین می‌کند خطوط کوتاه و مرتب باشند
@@ -93,7 +119,8 @@ class ConnectionsPainter extends CustomPainter {
         final path = Path();
         path.moveTo(start.dx, start.dy);
 
-        bool isHorizontal = (start.dx - end.dx).abs() > (start.dy - end.dy).abs();
+        bool isHorizontal =
+            (start.dx - end.dx).abs() > (start.dy - end.dy).abs();
         double curveAmount = 80.0; // انحنای بیشتر برای نرمی بیشتر
         Offset c1, c2;
 
@@ -110,9 +137,12 @@ class ConnectionsPainter extends CustomPainter {
         // اگر خیلی نزدیک باشند، انحنا را اصلاح می‌کنیم
         if ((start - end).distance < 150) {
           path.cubicTo(
-              (start.dx + end.dx) / 2, start.dy,
-              (start.dx + end.dx) / 2, end.dy,
-              end.dx, end.dy
+            (start.dx + end.dx) / 2,
+            start.dy,
+            (start.dx + end.dx) / 2,
+            end.dy,
+            end.dx,
+            end.dy,
           );
         } else {
           path.cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, end.dx, end.dy);
@@ -126,12 +156,20 @@ class ConnectionsPainter extends CustomPainter {
           ..color = endWin.themeColor.withValues(alpha: 0.4)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 6.0
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4); // بلور کردن برای افکت نئون
+          ..maskFilter = const MaskFilter.blur(
+            BlurStyle.normal,
+            4,
+          ); // بلور کردن برای افکت نئون
 
         canvas.drawPath(path, glowPaint);
 
         // سبک اصلی اتصال: glow + dashed flow (همان ظاهر قبلی)
-        _drawAnimatedDashedLine(canvas, path, endWin.themeColor, animation.value);
+        _drawAnimatedDashedLine(
+          canvas,
+          path,
+          endWin.themeColor,
+          animation.value,
+        );
 
         // دایره‌های اتصال (Anchor Points)
         canvas.drawCircle(start, 4, Paint()..color = Colors.white);
@@ -144,7 +182,12 @@ class ConnectionsPainter extends CustomPainter {
   }
 
   // متد کمکی برای رسم خط‌چین‌های متحرک روی مسیر منحنی
-  void _drawAnimatedDashedLine(Canvas canvas, Path path, Color color, double animValue) {
+  void _drawAnimatedDashedLine(
+    Canvas canvas,
+    Path path,
+    Color color,
+    double animValue,
+  ) {
     // متریک مسیر برای محاسبه طول
     final ui.PathMetrics pathMetrics = path.computeMetrics();
 
@@ -164,7 +207,13 @@ class ConnectionsPainter extends CustomPainter {
 
         if (drawEnd > drawStart) {
           final Path dashPath = metric.extractPath(drawStart, drawEnd);
-          canvas.drawPath(dashPath, Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = 2.5);
+          canvas.drawPath(
+            dashPath,
+            Paint()
+              ..color = color
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 2.5,
+          );
         }
         startOffset += (dashWidth + dashSpace);
       }
@@ -182,7 +231,8 @@ class ConnectionsPainter extends CustomPainter {
     Offset endPoint;
 
     // تشخیص جهت با حاشیه اطمینان (Hysteresis) برای جلوگیری از پرش‌های ناگهانی
-    if (dx.abs() > dy.abs() * 1.2) { // اگر تفاوت افقی معنادار است
+    if (dx.abs() > dy.abs() * 1.2) {
+      // اگر تفاوت افقی معنادار است
       if (dx > 0) {
         startPoint = from.centerRight;
         endPoint = to.centerLeft;

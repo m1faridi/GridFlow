@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'models.dart';
 import 'painters.dart';
 import 'window_widget.dart';
-import 'snap_overlays.dart';
 
 abstract class DesktopController {
   Future<dynamic> openApp(DesktopApp app, {String? parentId});
@@ -35,7 +35,8 @@ class DesktopHandle {
   }
 
   // اگر جایی هنوز close با id لازم داشتی:
-  void closeById(String id, [dynamic result]) => _controller.closeWindow(id, result);
+  void closeById(String id, [dynamic result]) =>
+      _controller.closeWindow(id, result);
 }
 
 /// Provider اصلی
@@ -49,7 +50,8 @@ class DesktopProvider extends InheritedWidget {
   });
 
   static DesktopHandle? of(BuildContext context) {
-    final provider = context.dependOnInheritedWidgetOfExactType<DesktopProvider>();
+    final provider = context
+        .dependOnInheritedWidgetOfExactType<DesktopProvider>();
     if (provider == null) return null;
     return DesktopHandle._(provider.controller, context);
   }
@@ -83,14 +85,23 @@ class _GridDesktopState extends State<GridDesktop>
     implements DesktopController {
   static const double _defaultWindowWidth = 500;
   static const double _defaultWindowHeight = 760;
+  static const double _minBackgroundScale = 0.1;
+  static const double _maxBackgroundScale = 1.4;
+  static const double _doubleTapZoomFactor = 1.18;
+  static const double _canvasHeadroom = 8000.0;
 
   late final ScrollController _horizontalScrollController;
   late final ScrollController _verticalScrollController;
+  final GlobalKey _canvasViewportKey = GlobalKey();
+
+  double _backgroundScale = 1.0;
+  Offset _backgroundOffset = Offset.zero;
+  double _gestureStartBackgroundScale = 1.0;
+  Offset _gestureSceneFocalPoint = Offset.zero;
+  Offset _lastGlobalFocalPoint = Offset.zero;
 
   List<WindowItem> windows = [];
-  SnapRegion activeSnapRegion = SnapRegion.none;
-  bool _isDragging = false;
-  bool _showSnapBar = false;
+  bool _didSetInitialCanvasOffset = false;
 
   late AnimationController _lineAnimationController;
 
@@ -104,6 +115,10 @@ class _GridDesktopState extends State<GridDesktop>
       duration: const Duration(seconds: 2),
     )..repeat();
 
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ensureInitialCanvasOffset();
+    });
+
     if (widget.autoStartApps != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         for (var app in widget.autoStartApps!) {
@@ -116,7 +131,8 @@ class _GridDesktopState extends State<GridDesktop>
   @override
   void didUpdateWidget(covariant GridDesktop oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.hasTitleBar != oldWidget.hasTitleBar || widget.isWindowMode != oldWidget.isWindowMode) {
+    if (widget.hasTitleBar != oldWidget.hasTitleBar ||
+        widget.isWindowMode != oldWidget.isWindowMode) {
       setState(() {
         for (var window in windows) {
           window.hasTitleBar = widget.hasTitleBar;
@@ -139,24 +155,123 @@ class _GridDesktopState extends State<GridDesktop>
     double offsetX = 0,
     double offsetY = 0,
   }) {
-    return Rect.fromLTWH(
-      offsetX + padding.left,
-      offsetY + padding.top,
-      screenSize.width - padding.left - padding.right,
-      screenSize.height - padding.top - padding.bottom,
-    );
+    final double scale = _backgroundScale <= 0 ? 1.0 : _backgroundScale;
+    final double left = (offsetX + padding.left - _backgroundOffset.dx) / scale;
+    final double top = (offsetY + padding.top - _backgroundOffset.dy) / scale;
+    final double right =
+        (offsetX + screenSize.width - padding.right - _backgroundOffset.dx) /
+        scale;
+    final double bottom =
+        (offsetY + screenSize.height - padding.bottom - _backgroundOffset.dy) /
+        scale;
+
+    return Rect.fromLTRB(left, top, right, bottom);
   }
 
-  double _horizontalOffset() =>
-      _horizontalScrollController.hasClients ? _horizontalScrollController.offset : 0;
+  void _ensureInitialCanvasOffset() {
+    if (!mounted || _didSetInitialCanvasOffset) return;
 
-  double _verticalOffset() =>
-      _verticalScrollController.hasClients ? _verticalScrollController.offset : 0;
-
-  void _panCanvas(DragUpdateDetails details) {
     if (_horizontalScrollController.hasClients) {
       final position = _horizontalScrollController.position;
-      final target = (position.pixels - details.delta.dx)
+      final target = _canvasHeadroom
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      if ((position.pixels - target).abs() > 0.5) {
+        _horizontalScrollController.jumpTo(target);
+      }
+    }
+
+    if (_verticalScrollController.hasClients) {
+      final position = _verticalScrollController.position;
+      final target = _canvasHeadroom
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      if ((position.pixels - target).abs() > 0.5) {
+        _verticalScrollController.jumpTo(target);
+      }
+    }
+
+    _didSetInitialCanvasOffset = true;
+  }
+
+  void _rebaseWorldIfNeeded() {
+    if (!mounted || windows.isEmpty) return;
+
+    const double rebaseThreshold = 800.0;
+    double minLeft = double.infinity;
+    double minTop = double.infinity;
+
+    for (final window in windows) {
+      minLeft = math.min(minLeft, window.rect.left);
+      minTop = math.min(minTop, window.rect.top);
+
+      if (window.savedRect != null) {
+        minLeft = math.min(minLeft, window.savedRect!.left);
+        minTop = math.min(minTop, window.savedRect!.top);
+      }
+      if (window.preMinRect != null) {
+        minLeft = math.min(minLeft, window.preMinRect!.left);
+        minTop = math.min(minTop, window.preMinRect!.top);
+      }
+    }
+
+    final double shiftX = minLeft < rebaseThreshold
+        ? (_canvasHeadroom - minLeft)
+        : 0.0;
+    final double shiftY = minTop < rebaseThreshold
+        ? (_canvasHeadroom - minTop)
+        : 0.0;
+
+    if (shiftX == 0.0 && shiftY == 0.0) return;
+
+    final Offset shift = Offset(shiftX, shiftY);
+    setState(() {
+      for (final window in windows) {
+        window.rect = window.rect.shift(shift);
+        if (window.savedRect != null) {
+          window.savedRect = window.savedRect!.shift(shift);
+        }
+        if (window.preMinRect != null) {
+          window.preMinRect = window.preMinRect!.shift(shift);
+        }
+      }
+    });
+
+    final double scale = _backgroundScale <= 0 ? 1.0 : _backgroundScale;
+
+    if (_horizontalScrollController.hasClients && shiftX != 0.0) {
+      final position = _horizontalScrollController.position;
+      final target = (position.pixels + (shiftX * scale))
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      if ((target - position.pixels).abs() > 0.5) {
+        _horizontalScrollController.jumpTo(target);
+      }
+    }
+
+    if (_verticalScrollController.hasClients && shiftY != 0.0) {
+      final position = _verticalScrollController.position;
+      final target = (position.pixels + (shiftY * scale))
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      if ((target - position.pixels).abs() > 0.5) {
+        _verticalScrollController.jumpTo(target);
+      }
+    }
+  }
+
+  double _horizontalOffset() => _horizontalScrollController.hasClients
+      ? _horizontalScrollController.offset
+      : 0;
+
+  double _verticalOffset() => _verticalScrollController.hasClients
+      ? _verticalScrollController.offset
+      : 0;
+
+  void _panCanvasByDelta(Offset delta) {
+    if (_horizontalScrollController.hasClients) {
+      final position = _horizontalScrollController.position;
+      final target = (position.pixels - delta.dx)
           .clamp(position.minScrollExtent, position.maxScrollExtent)
           .toDouble();
       if (target != position.pixels) {
@@ -166,7 +281,7 @@ class _GridDesktopState extends State<GridDesktop>
 
     if (_verticalScrollController.hasClients) {
       final position = _verticalScrollController.position;
-      final target = (position.pixels - details.delta.dy)
+      final target = (position.pixels - delta.dy)
           .clamp(position.minScrollExtent, position.maxScrollExtent)
           .toDouble();
       if (target != position.pixels) {
@@ -175,14 +290,129 @@ class _GridDesktopState extends State<GridDesktop>
     }
   }
 
+  Offset _clampBackgroundOffset(Offset offset, Size canvasSize, double scale) {
+    if ((scale - 1.0).abs() < 0.0001) return Offset.zero;
+
+    final double targetWidth = canvasSize.width * scale;
+    final double targetHeight = canvasSize.height * scale;
+    final double rawX = canvasSize.width - targetWidth;
+    final double rawY = canvasSize.height - targetHeight;
+    final double minX = math.min(0.0, rawX);
+    final double maxX = math.max(0.0, rawX);
+    final double minY = math.min(0.0, rawY);
+    final double maxY = math.max(0.0, rawY);
+    final double dx = offset.dx.clamp(minX, maxX).toDouble();
+    final double dy = offset.dy.clamp(minY, maxY).toDouble();
+    return Offset(dx, dy);
+  }
+
+  Offset _toCanvasViewportLocal(Offset globalPosition) {
+    final BuildContext? viewportContext = _canvasViewportKey.currentContext;
+    if (viewportContext == null) return globalPosition;
+    final renderObject = viewportContext.findRenderObject();
+    if (renderObject is! RenderBox) return globalPosition;
+    return renderObject.globalToLocal(globalPosition);
+  }
+
+  void _onBackgroundScaleStart(ScaleStartDetails details) {
+    _gestureStartBackgroundScale = _backgroundScale;
+    _lastGlobalFocalPoint = details.focalPoint;
+    final Offset focalInViewport = _toCanvasViewportLocal(details.focalPoint);
+    _gestureSceneFocalPoint =
+        (focalInViewport - _backgroundOffset) / _backgroundScale;
+  }
+
+  void _onBackgroundScaleUpdate(ScaleUpdateDetails details, Size canvasSize) {
+    final bool isPinchGesture =
+        details.pointerCount == 0 || details.pointerCount > 1;
+    if (!isPinchGesture) {
+      final Offset globalDelta = details.focalPoint - _lastGlobalFocalPoint;
+      _lastGlobalFocalPoint = details.focalPoint;
+      _panCanvasByDelta(globalDelta);
+      return;
+    }
+
+    final double nextScale = (_gestureStartBackgroundScale * details.scale)
+        .clamp(_minBackgroundScale, _maxBackgroundScale)
+        .toDouble();
+    final Offset focalInViewport = _toCanvasViewportLocal(details.focalPoint);
+
+    final Offset rawOffset =
+        focalInViewport - (_gestureSceneFocalPoint * nextScale);
+    final Offset nextOffset = _clampBackgroundOffset(
+      rawOffset,
+      canvasSize,
+      nextScale,
+    );
+
+    if (nextScale == _backgroundScale && nextOffset == _backgroundOffset)
+      return;
+
+    setState(() {
+      _backgroundScale = nextScale;
+      _backgroundOffset = nextOffset;
+    });
+  }
+
+  void _onBackgroundPointerSignal(PointerSignalEvent event, Size canvasSize) {
+    if (event is! PointerScrollEvent) return;
+    if (event.scrollDelta.dy == 0) return;
+
+    final double zoomFactor = math.exp(-event.scrollDelta.dy * 0.0015);
+    final Offset focalInViewport = _toCanvasViewportLocal(event.position);
+    _zoomBackgroundAtViewportPoint(focalInViewport, canvasSize, zoomFactor);
+  }
+
+  void _zoomBackgroundAtViewportPoint(
+    Offset viewportPoint,
+    Size canvasSize,
+    double zoomFactor,
+  ) {
+    final double nextScale = (_backgroundScale * zoomFactor)
+        .clamp(_minBackgroundScale, _maxBackgroundScale)
+        .toDouble();
+    if ((nextScale - _backgroundScale).abs() < 0.0001) return;
+
+    final Offset scenePoint =
+        (viewportPoint - _backgroundOffset) / _backgroundScale;
+    final Offset rawOffset = viewportPoint - (scenePoint * nextScale);
+    final Offset nextOffset = _clampBackgroundOffset(
+      rawOffset,
+      canvasSize,
+      nextScale,
+    );
+
+    setState(() {
+      _backgroundScale = nextScale;
+      _backgroundOffset = nextOffset;
+    });
+  }
+
+  void _onBackgroundDoubleTapDown(TapDownDetails details, Size canvasSize) {
+    final Offset focalInViewport = _toCanvasViewportLocal(
+      details.globalPosition,
+    );
+    _zoomBackgroundAtViewportPoint(
+      focalInViewport,
+      canvasSize,
+      _doubleTapZoomFactor,
+    );
+  }
+
   Rect _fitRectInsideSafeRect(Rect rect, Rect safeRect) {
     final double minWidth = math.min(200.0, safeRect.width);
     final double minHeight = math.min(150.0, safeRect.height);
-    final double fittedWidth = rect.width.clamp(minWidth, safeRect.width).toDouble();
-    final double fittedHeight = rect.height.clamp(minHeight, safeRect.height).toDouble();
+    final double fittedWidth = rect.width
+        .clamp(minWidth, safeRect.width)
+        .toDouble();
+    final double fittedHeight = rect.height
+        .clamp(minHeight, safeRect.height)
+        .toDouble();
     final double maxLeft = safeRect.right - fittedWidth;
     final double maxTop = safeRect.bottom - fittedHeight;
-    final double fittedLeft = rect.left.clamp(safeRect.left, maxLeft).toDouble();
+    final double fittedLeft = rect.left
+        .clamp(safeRect.left, maxLeft)
+        .toDouble();
     final double fittedTop = rect.top.clamp(safeRect.top, maxTop).toDouble();
     return Rect.fromLTWH(fittedLeft, fittedTop, fittedWidth, fittedHeight);
   }
@@ -201,20 +431,27 @@ class _GridDesktopState extends State<GridDesktop>
     if (viewportWidth <= 0 || viewportHeight <= 0) return;
 
     const double margin = 24;
+    final double scale = _backgroundScale <= 0 ? 1.0 : _backgroundScale;
+    final double translateX = _backgroundOffset.dx;
+    final double translateY = _backgroundOffset.dy;
 
     if (adjustHorizontal && _horizontalScrollController.hasClients) {
       final position = _horizontalScrollController.position;
       final visibleLeft = _horizontalOffset() + padding.left;
       final visibleRight = visibleLeft + viewportWidth;
+      final double rectLeft = (rect.left * scale) + translateX;
+      final double rectRight = (rect.right * scale) + translateX;
       double target = position.pixels;
 
-      if (rect.right + margin > visibleRight) {
-        target = rect.right + margin - padding.left - viewportWidth;
-      } else if (rect.left - margin < visibleLeft) {
-        target = rect.left - margin - padding.left;
+      if (rectRight + margin > visibleRight) {
+        target = rectRight + margin - padding.left - viewportWidth;
+      } else if (rectLeft - margin < visibleLeft) {
+        target = rectLeft - margin - padding.left;
       }
 
-      final clamped = target.clamp(position.minScrollExtent, position.maxScrollExtent).toDouble();
+      final clamped = target
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
       if (clamped != position.pixels) {
         _horizontalScrollController.jumpTo(clamped);
       }
@@ -224,15 +461,19 @@ class _GridDesktopState extends State<GridDesktop>
       final position = _verticalScrollController.position;
       final visibleTop = _verticalOffset() + padding.top;
       final visibleBottom = visibleTop + viewportHeight;
+      final double rectTop = (rect.top * scale) + translateY;
+      final double rectBottom = (rect.bottom * scale) + translateY;
       double target = position.pixels;
 
-      if (rect.bottom + margin > visibleBottom) {
-        target = rect.bottom + margin - padding.top - viewportHeight;
-      } else if (rect.top - margin < visibleTop) {
-        target = rect.top - margin - padding.top;
+      if (rectBottom + margin > visibleBottom) {
+        target = rectBottom + margin - padding.top - viewportHeight;
+      } else if (rectTop - margin < visibleTop) {
+        target = rectTop - margin - padding.top;
       }
 
-      final clamped = target.clamp(position.minScrollExtent, position.maxScrollExtent).toDouble();
+      final clamped = target
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
       if (clamped != position.pixels) {
         _verticalScrollController.jumpTo(clamped);
       }
@@ -266,14 +507,14 @@ class _GridDesktopState extends State<GridDesktop>
   }
 
   Future<dynamic> _internalOpenWindow(
-      String title,
-      Color color, {
-        String? parentId,
-        Widget Function(String id)? customBodyBuilder,
-        String? connectionTag,
-        bool isClosable = true,
-        bool appHasTitleBar = true,
-      }) {
+    String title,
+    Color color, {
+    String? parentId,
+    Widget Function(String id)? customBodyBuilder,
+    String? connectionTag,
+    bool isClosable = true,
+    bool appHasTitleBar = true,
+  }) {
     final completer = Completer<dynamic>();
     Rect? openedRect;
     bool openedAsMaximized = false;
@@ -308,15 +549,20 @@ class _GridDesktopState extends State<GridDesktop>
 
       double targetWidth = _defaultWindowWidth;
       double targetHeight = safeRect.height;
-      WindowItem? referenceWindow = parentWindow ?? (windows.isNotEmpty ? windows.last : null);
+      WindowItem? referenceWindow =
+          parentWindow ?? (windows.isNotEmpty ? windows.last : null);
 
       if (referenceWindow != null) {
         targetWidth = referenceWindow.rect.width;
         targetHeight = referenceWindow.rect.height;
       }
 
-      final double maxWidth = (safeRect.width - 80).clamp(260.0, double.infinity).toDouble();
-      final double maxHeight = safeRect.height.clamp(180.0, double.infinity).toDouble();
+      final double maxWidth = (safeRect.width - 80)
+          .clamp(260.0, double.infinity)
+          .toDouble();
+      final double maxHeight = safeRect.height
+          .clamp(180.0, double.infinity)
+          .toDouble();
       targetWidth = targetWidth.clamp(260.0, maxWidth).toDouble();
       targetHeight = targetHeight.clamp(180.0, maxHeight).toDouble();
 
@@ -346,7 +592,12 @@ class _GridDesktopState extends State<GridDesktop>
           startRect = rightOfCurrent;
         } else {
           startRect = _fitRectInsideSafeRect(
-            Rect.fromLTWH(safeRect.left, safeRect.top, targetWidth, targetHeight),
+            Rect.fromLTWH(
+              safeRect.left,
+              safeRect.top,
+              targetWidth,
+              targetHeight,
+            ),
             safeRect,
           );
         }
@@ -360,32 +611,29 @@ class _GridDesktopState extends State<GridDesktop>
       final Widget innerContent = (customBodyBuilder != null)
           ? customBodyBuilder(newId)
           : Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.white, color.withValues(alpha: 0.05)],
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey[800],
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.white, color.withValues(alpha: 0.05)],
+                ),
               ),
-            ),
-          ],
-        ),
-      );
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[800],
+                    ),
+                  ),
+                ],
+              ),
+            );
 
-      final Widget content = WindowScope(
-        windowId: newId,
-        child: innerContent,
-      );
+      final Widget content = WindowScope(windowId: newId, child: innerContent);
 
       windows.add(
         WindowItem(
@@ -458,7 +706,8 @@ class _GridDesktopState extends State<GridDesktop>
     setState(() {
       final window = windows[index];
       if (window.isMaximized) {
-        window.rect = window.savedRect ??
+        window.rect =
+            window.savedRect ??
             Rect.fromLTWH(
               safeRect.left + 50,
               safeRect.top + 50,
@@ -481,7 +730,8 @@ class _GridDesktopState extends State<GridDesktop>
     setState(() {
       final window = windows[index];
       if (window.isMinimized) {
-        window.rect = window.preMinRect ??
+        window.rect =
+            window.preMinRect ??
             Rect.fromLTWH(100, 100, _defaultWindowWidth, _defaultWindowHeight);
         window.isMinimized = false;
         focusWindow(id);
@@ -494,7 +744,12 @@ class _GridDesktopState extends State<GridDesktop>
     });
   }
 
-  void onWindowDragUpdate(String id, DragUpdateDetails details, Size screenSize, EdgeInsets padding) {
+  void onWindowDragUpdate(
+    String id,
+    DragUpdateDetails details,
+    Size screenSize,
+    EdgeInsets padding,
+  ) {
     final index = windows.indexWhere((w) => w.id == id);
     if (index == -1) return;
     final window = windows[index];
@@ -511,164 +766,19 @@ class _GridDesktopState extends State<GridDesktop>
         final Rect shifted = window.rect.shift(details.delta);
         if (isMobile) {
           window.rect = _fitRectInsideSafeRect(shifted, safeRect);
-          _showSnapBar = false;
-          activeSnapRegion = SnapRegion.none;
         } else {
           window.rect = shifted;
-          if (window.rect.top < safeRect.top) {
-            window.rect = Rect.fromLTWH(
-              window.rect.left,
-              safeRect.top,
-              window.rect.width,
-              window.rect.height,
-            );
-          }
         }
-        _isDragging = true;
       });
-    }
 
-    if (isMobile) return;
-
-    final double dx = details.globalPosition.dx;
-    final double dy = details.globalPosition.dy;
-    final double w = screenSize.width;
-
-    bool shouldShowSnapBar = false;
-    if (dy < padding.top + 10) {
-      shouldShowSnapBar = true;
-    } else if (_showSnapBar && dy > padding.top + 150) {
-      shouldShowSnapBar = false;
-    } else {
-      shouldShowSnapBar = _showSnapBar;
-    }
-
-    if (_showSnapBar != shouldShowSnapBar) {
-      setState(() => _showSnapBar = shouldShowSnapBar);
-    }
-
-    SnapRegion region = SnapRegion.none;
-    bool onSnapBar = false;
-
-    if (_showSnapBar) {
-      final double centerX = w / 2;
-      const double barWidth = 360;
-      final double barStart = centerX - (barWidth / 2);
-      if (dy < padding.top + 100 && dx > barStart && dx < barStart + barWidth) {
-        onSnapBar = true;
-        final double relX = dx - barStart;
-        if (relX < 50) region = SnapRegion.left;
-        else if (relX < 100) region = SnapRegion.right;
-        else if (relX < 120) region = SnapRegion.none;
-        else if (relX < 170) region = SnapRegion.leftThird;
-        else if (relX < 220) region = SnapRegion.centerThird;
-        else if (relX < 270) region = SnapRegion.rightThird;
-        else if (relX < 290) region = SnapRegion.none;
-        else region = SnapRegion.top;
+      if (!isMobile) {
+        _rebaseWorldIfNeeded();
       }
     }
-
-    if (!onSnapBar) {
-      const double cornerZone = 50.0;
-      const double edgeZone = 20.0;
-      final double h = screenSize.height;
-
-      if (dx < cornerZone && dy < cornerZone + padding.top) region = SnapRegion.topLeft;
-      else if (dx > w - cornerZone && dy < cornerZone + padding.top) region = SnapRegion.topRight;
-      else if (dx < cornerZone && dy > h - cornerZone) region = SnapRegion.bottomLeft;
-      else if (dx > w - cornerZone && dy > h - cornerZone) region = SnapRegion.bottomRight;
-      else if (dy < padding.top + 5) region = SnapRegion.top;
-      else if (dy > h - edgeZone) {
-        if (dx < w * 0.3) region = SnapRegion.leftThird;
-        else if (dx > w * 0.7) region = SnapRegion.rightThird;
-        else region = SnapRegion.centerThird;
-      } else if (dx < edgeZone) region = SnapRegion.left;
-      else if (dx > w - edgeZone) region = SnapRegion.right;
-    }
-
-    if (activeSnapRegion != region) setState(() => activeSnapRegion = region);
   }
 
   void onWindowDragEnd(String id, Size screenSize, EdgeInsets padding) {
-    setState(() {
-      _isDragging = false;
-      _showSnapBar = false;
-    });
-
-    final bool isMobile = screenSize.width < 700;
-    if (isMobile) {
-      if (activeSnapRegion != SnapRegion.none) {
-        setState(() => activeSnapRegion = SnapRegion.none);
-      }
-      return;
-    }
-
-    if (activeSnapRegion == SnapRegion.none) return;
-    final index = windows.indexWhere((w) => w.id == id);
-    if (index == -1) return;
-
-    setState(() {
-      final window = windows[index];
-      window.savedRect = window.rect;
-
-      final double safeW = screenSize.width - padding.left - padding.right;
-      final double safeH = screenSize.height - padding.top - padding.bottom;
-      final double startX = _horizontalOffset() + padding.left;
-      final double startY = _verticalOffset() + padding.top;
-
-      final hw = safeW / 2;
-      final hh = safeH / 2;
-      final tw = safeW / 3;
-
-      if (window.isMinimized) window.isMinimized = false;
-
-      switch (activeSnapRegion) {
-        case SnapRegion.left:
-          window.rect = Rect.fromLTWH(startX, startY, hw, safeH);
-          window.isMaximized = false;
-          break;
-        case SnapRegion.right:
-          window.rect = Rect.fromLTWH(startX + hw, startY, hw, safeH);
-          window.isMaximized = false;
-          break;
-        case SnapRegion.top:
-          window.rect = Rect.fromLTWH(startX, startY, safeW, safeH);
-          window.isMaximized = true;
-          break;
-        case SnapRegion.topLeft:
-          window.rect = Rect.fromLTWH(startX, startY, hw, hh);
-          window.isMaximized = false;
-          break;
-        case SnapRegion.topRight:
-          window.rect = Rect.fromLTWH(startX + hw, startY, hw, hh);
-          window.isMaximized = false;
-          break;
-        case SnapRegion.bottomLeft:
-          window.rect = Rect.fromLTWH(startX, startY + hh, hw, hh);
-          window.isMaximized = false;
-          break;
-        case SnapRegion.bottomRight:
-          window.rect = Rect.fromLTWH(startX + hw, startY + hh, hw, hh);
-          window.isMaximized = false;
-          break;
-        case SnapRegion.leftThird:
-          window.rect = Rect.fromLTWH(startX, startY, tw, safeH);
-          window.isMaximized = false;
-          break;
-        case SnapRegion.centerThird:
-          window.rect = Rect.fromLTWH(startX + tw, startY, tw, safeH);
-          window.isMaximized = false;
-          break;
-        case SnapRegion.rightThird:
-          window.rect = Rect.fromLTWH(startX + tw * 2, startY, tw, safeH);
-          window.isMaximized = false;
-          break;
-        default:
-          break;
-      }
-
-      activeSnapRegion = SnapRegion.none;
-    });
+    // Snap behavior removed intentionally; drag now only repositions windows.
   }
 
   @override
@@ -680,7 +790,10 @@ class _GridDesktopState extends State<GridDesktop>
         resizeToAvoidBottomInset: false,
         body: LayoutBuilder(
           builder: (context, constraints) {
-            final desktopSize = Size(constraints.maxWidth, constraints.maxHeight);
+            final desktopSize = Size(
+              constraints.maxWidth,
+              constraints.maxHeight,
+            );
             final padding = MediaQuery.of(context).padding;
             final safeRect = _getSafeRect(
               desktopSize,
@@ -689,26 +802,70 @@ class _GridDesktopState extends State<GridDesktop>
               offsetY: _verticalOffset(),
             );
             final bool isMobile = desktopSize.width < 700;
-            final bool lockBackgroundScroll =
-                windows.any((window) => window.isMaximized && !window.isMinimized);
-            final bool blockBackgroundInput =
-                lockBackgroundScroll;
+            final bool lockBackgroundScroll = windows.any(
+              (window) => window.isMaximized && !window.isMinimized,
+            );
+            final bool blockBackgroundInput = lockBackgroundScroll;
             const double backgroundScrollbarThickness = 10;
             const double backgroundDragInset = backgroundScrollbarThickness + 4;
             const Color backgroundScrollbarThumbColor = Color(0xFF6B7078);
             const Color backgroundScrollbarTrackColor = Color(0x332F343C);
             const Color backgroundScrollbarTrackBorderColor = Color(0x66565C66);
-            double canvasWidth = math.max(desktopSize.width, safeRect.right);
-            double canvasHeight = math.max(desktopSize.height, safeRect.bottom);
+            double canvasWidth = math.max(
+              desktopSize.width + (_canvasHeadroom * 2),
+              safeRect.right + _canvasHeadroom,
+            );
+            double canvasHeight = math.max(
+              desktopSize.height + (_canvasHeadroom * 2),
+              safeRect.bottom + _canvasHeadroom,
+            );
             for (final window in windows) {
               final rect = window.isMaximized ? safeRect : window.rect;
               canvasWidth = math.max(canvasWidth, rect.right + 200);
               canvasHeight = math.max(canvasHeight, rect.bottom + 200);
             }
+            final canvasSize = Size(canvasWidth, canvasHeight);
+            final Offset worldTranslation = Offset(
+              _backgroundOffset.dx - (_horizontalOffset() * _backgroundScale),
+              _backgroundOffset.dy - (_verticalOffset() * _backgroundScale),
+            );
 
             return Stack(
               fit: StackFit.expand,
               children: [
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: widget.background != null
+                        ? ClipRect(
+                            child: Transform(
+                              transform:
+                                  Matrix4.diagonal3Values(
+                                    _backgroundScale,
+                                    _backgroundScale,
+                                    1.0,
+                                  )..setTranslationRaw(
+                                    worldTranslation.dx,
+                                    worldTranslation.dy,
+                                    0.0,
+                                  ),
+                              child: SizedBox(
+                                width: canvasWidth,
+                                height: canvasHeight,
+                                child: widget.background!,
+                              ),
+                            ),
+                          )
+                        : ColoredBox(
+                            color: const Color(0xFF1E1E1E),
+                            child: CustomPaint(
+                              painter: GridPatternPainter(
+                                scale: _backgroundScale,
+                                translation: worldTranslation,
+                              ),
+                            ),
+                          ),
+                  ),
+                ),
                 RawScrollbar(
                   controller: _horizontalScrollController,
                   notificationPredicate: (notification) =>
@@ -745,107 +902,141 @@ class _GridDesktopState extends State<GridDesktop>
                         physics: const NeverScrollableScrollPhysics(),
                         scrollDirection: Axis.horizontal,
                         child: SizedBox(
+                          key: _canvasViewportKey,
                           width: canvasWidth,
                           height: canvasHeight,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              Positioned.fill(
-                                child: widget.background ??
-                                    Container(
-                                      color: const Color(0xFF1E1E1E),
-                                      child: CustomPaint(
-                                        painter: GridPatternPainter(),
-                                        size: Size.infinite,
+                          child: ClipRect(
+                            child: Transform(
+                              transform:
+                                  Matrix4.diagonal3Values(
+                                    _backgroundScale,
+                                    _backgroundScale,
+                                    1.0,
+                                  )..setTranslationRaw(
+                                    _backgroundOffset.dx,
+                                    _backgroundOffset.dy,
+                                    0.0,
+                                  ),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  if (!blockBackgroundInput)
+                                    Positioned.fill(
+                                      right: backgroundDragInset,
+                                      bottom: backgroundDragInset,
+                                      child: Listener(
+                                        behavior: HitTestBehavior.opaque,
+                                        onPointerSignal: (event) =>
+                                            _onBackgroundPointerSignal(
+                                              event,
+                                              canvasSize,
+                                            ),
+                                        child: GestureDetector(
+                                          behavior: HitTestBehavior.opaque,
+                                          onScaleStart: _onBackgroundScaleStart,
+                                          onScaleUpdate: (details) =>
+                                              _onBackgroundScaleUpdate(
+                                                details,
+                                                canvasSize,
+                                              ),
+                                          onDoubleTapDown: (details) =>
+                                              _onBackgroundDoubleTapDown(
+                                                details,
+                                                canvasSize,
+                                              ),
+                                          child: const SizedBox.expand(),
+                                        ),
                                       ),
                                     ),
-                              ),
-                              if (!blockBackgroundInput)
-                                Positioned.fill(
-                                  right: backgroundDragInset,
-                                  bottom: backgroundDragInset,
-                                  child: GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    onPanUpdate: _panCanvas,
-                                    child: const SizedBox.expand(),
+                                  Positioned(
+                                    top: padding.top + 50,
+                                    left: 30,
+                                    child: Column(
+                                      children: widget.apps.map((app) {
+                                        return Padding(
+                                          padding: const EdgeInsets.only(
+                                            bottom: 30,
+                                          ),
+                                          child: AppIconLauncher(
+                                            label: app.title,
+                                            color: app.color,
+                                            onTap: () => openApp(app),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
                                   ),
-                                ),
-                              Positioned(
-                                top: padding.top + 50,
-                                left: 30,
-                                child: Column(
-                                  children: widget.apps.map((app) {
-                                    return Padding(
-                                      padding: const EdgeInsets.only(bottom: 30),
-                                      child: AppIconLauncher(
-                                        label: app.title,
-                                        color: app.color,
-                                        onTap: () => openApp(app),
+                                  Positioned.fill(
+                                    child: IgnorePointer(
+                                      child: CustomPaint(
+                                        painter: ConnectionsPainter(
+                                          windows,
+                                          _lineAnimationController,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  ...windows.map((window) {
+                                    return FastWindow(
+                                      key: ValueKey(window.id),
+                                      window: window,
+                                      renderRect: window.isMaximized
+                                          ? safeRect
+                                          : window.rect,
+                                      desktopSize: desktopSize,
+                                      padding: padding,
+                                      onFocus: () => focusWindow(window.id),
+                                      onClose: () => closeWindow(window.id),
+                                      onMaximize: () => toggleMaximize(
+                                        window.id,
+                                        desktopSize,
+                                        padding,
+                                      ),
+                                      onMinimize: () =>
+                                          toggleMinimize(window.id),
+                                      onUpdate: (rect) {
+                                        setState(() {
+                                          if (isMobile &&
+                                              !window.isMaximized &&
+                                              !window.isMinimized) {
+                                            final Rect safe = _getSafeRect(
+                                              desktopSize,
+                                              padding,
+                                              offsetX: _horizontalOffset(),
+                                              offsetY: _verticalOffset(),
+                                            );
+                                            window.rect =
+                                                _fitRectInsideSafeRect(
+                                                  rect,
+                                                  safe,
+                                                );
+                                          } else {
+                                            window.rect = rect;
+                                          }
+                                        });
+                                      },
+                                      onDragUpdate: (d) => onWindowDragUpdate(
+                                        window.id,
+                                        d,
+                                        desktopSize,
+                                        padding,
+                                      ),
+                                      onDragEnd: () => onWindowDragEnd(
+                                        window.id,
+                                        desktopSize,
+                                        padding,
                                       ),
                                     );
-                                  }).toList(),
-                                ),
+                                  }),
+                                ],
                               ),
-                              Positioned.fill(
-                                child: IgnorePointer(
-                                  child: CustomPaint(
-                                    painter: ConnectionsPainter(windows, _lineAnimationController),
-                                  ),
-                                ),
-                              ),
-                              ...windows.map((window) {
-                                return FastWindow(
-                                  key: ValueKey(window.id),
-                                  window: window,
-                                  renderRect: window.isMaximized ? safeRect : window.rect,
-                                  desktopSize: desktopSize,
-                                  padding: padding,
-                                  onFocus: () => focusWindow(window.id),
-                                  onClose: () => closeWindow(window.id),
-                                  onMaximize: () => toggleMaximize(window.id, desktopSize, padding),
-                                  onMinimize: () => toggleMinimize(window.id),
-                                  onUpdate: (rect) {
-                                    setState(() {
-                                      if (isMobile && !window.isMaximized && !window.isMinimized) {
-                                        final Rect safe = _getSafeRect(
-                                          desktopSize,
-                                          padding,
-                                          offsetX: _horizontalOffset(),
-                                          offsetY: _verticalOffset(),
-                                        );
-                                        window.rect = _fitRectInsideSafeRect(rect, safe);
-                                      } else {
-                                        window.rect = rect;
-                                      }
-                                    });
-                                  },
-                                  onDragUpdate: (d) => onWindowDragUpdate(window.id, d, desktopSize, padding),
-                                  onDragEnd: () => onWindowDragEnd(window.id, desktopSize, padding),
-                                );
-                              }),
-                            ],
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-                  if (activeSnapRegion != SnapRegion.none)
-                    SnapPreviewOverlay(region: activeSnapRegion, screenSize: desktopSize, padding: padding),
-                  AnimatedPositioned(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutBack,
-                    top: isMobile ? 0 : (_isDragging && _showSnapBar ? padding.top + 10 : -150),
-                    bottom: isMobile ? 0 : null,
-                    left: isMobile ? (_isDragging && _showSnapBar ? 10 : -90) : 0,
-                    right: isMobile ? null : 0,
-                    child: Center(
-                      child: StaticSnapBar(
-                        activeRegion: activeSnapRegion,
-                        isVertical: isMobile,
-                      ),
-                    ),
-                  ),
               ],
             );
           },

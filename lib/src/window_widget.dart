@@ -5,7 +5,52 @@ import 'package:flutter_box_transform/flutter_box_transform.dart';
 
 import 'models.dart';
 
+class _ResizeGripPainter extends CustomPainter {
+  final Color color;
+  final double strokeWidth;
+  final double inset;
+  final double legLength;
+
+  const _ResizeGripPainter({
+    required this.color,
+    required this.strokeWidth,
+    required this.inset,
+    required this.legLength,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final double right = size.width - inset;
+    final double bottom = size.height - inset;
+    final double left = right - legLength;
+    final double top = bottom - legLength;
+
+    final path = Path()
+      ..moveTo(left, bottom)
+      ..lineTo(right, bottom)
+      ..lineTo(right, top);
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ResizeGripPainter oldDelegate) {
+    return oldDelegate.color != color ||
+        oldDelegate.strokeWidth != strokeWidth ||
+        oldDelegate.inset != inset ||
+        oldDelegate.legLength != legLength;
+  }
+}
+
 class FastWindow extends StatelessWidget {
+  // Resize grip style tokens (easy to customize in one place).
+
   final WindowItem window;
   final Rect? renderRect;
   final Size desktopSize;
@@ -33,6 +78,31 @@ class FastWindow extends StatelessWidget {
     required this.onDragEnd,
   });
 
+  Widget _buildBottomRightResizeGrip({required bool canResize}) {
+    if (!canResize) return const SizedBox.expand();
+
+    return Align(
+      alignment: Alignment.bottomRight,
+      child: IgnorePointer(
+        child: Transform.translate(
+          offset: Offset(-11.0, -11.0),
+          child: SizedBox(
+            width: 30,
+            height: 30,
+            child: CustomPaint(
+              painter: _ResizeGripPainter(
+                color: Colors.white.withValues(alpha: 0.92),
+                strokeWidth: 3.5,
+                inset: 0.25,
+                legLength: 12.8,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   MouseCursor _cornerCursor(HandlePosition handle) {
     if (defaultTargetPlatform == TargetPlatform.macOS) {
       switch (handle) {
@@ -50,12 +120,12 @@ class FastWindow extends StatelessWidget {
     switch (handle) {
       case HandlePosition.topLeft:
       case HandlePosition.bottomRight:
-      // این برای خط مورب \ است (مثل عکس شما)
+        // این برای خط مورب \ است (مثل عکس شما)
         return SystemMouseCursors.resizeUpLeftDownRight;
 
       case HandlePosition.topRight:
       case HandlePosition.bottomLeft:
-      // این برای خط مورب / است
+        // این برای خط مورب / است
         return SystemMouseCursors.resizeUpRightDownLeft;
 
       default:
@@ -82,8 +152,9 @@ class FastWindow extends StatelessWidget {
         defaultTargetPlatform == TargetPlatform.macOS ||
         defaultTargetPlatform == TargetPlatform.windows ||
         defaultTargetPlatform == TargetPlatform.linux;
+    final bool isMobileOrTablet = desktopSize.shortestSide <= 1024;
     final bool canResize = !window.isMaximized && !window.isMinimized;
-    final double resizeHandleTapSize = isDesktopPlatform ? 20 : 28;
+    final double resizeHandleTapSize = isDesktopPlatform ? 24 : 32;
 
     final Set<HandlePosition> allHandles = {
       HandlePosition.topLeft,
@@ -123,10 +194,14 @@ class FastWindow extends StatelessWidget {
         if (isDesktopPlatform) {
           return MouseRegion(
             cursor: _cornerCursor(handle),
-            child: const SizedBox.expand(),
+            child: isMobileOrTablet && handle == HandlePosition.bottomRight
+                ? _buildBottomRightResizeGrip(canResize: canResize)
+                : const SizedBox.expand(),
           );
         }
-        return const SizedBox.expand();
+        return isMobileOrTablet && handle == HandlePosition.bottomRight
+            ? _buildBottomRightResizeGrip(canResize: canResize)
+            : const SizedBox.expand();
       },
       sideHandleBuilder: (context, handle) => isDesktopPlatform
           ? MouseRegion(
@@ -137,6 +212,7 @@ class FastWindow extends StatelessWidget {
       handleAlignment: HandleAlignment.center,
       handleTapSize: resizeHandleTapSize,
       draggable: false,
+      allowFlippingWhileResizing: false,
       onResizeStart: (_, event) {
         if (!window.isFocused) {
           onFocus();
@@ -234,10 +310,7 @@ class FastWindow extends StatelessWidget {
           ),
         );
 
-        return Listener(
-          behavior: HitTestBehavior.opaque,
-          child: windowBody,
-        );
+        return Listener(behavior: HitTestBehavior.opaque, child: windowBody);
       },
     );
   }
@@ -255,14 +328,18 @@ class FastWindow extends StatelessWidget {
         defaultTargetPlatform == TargetPlatform.linux;
     final double controlButtonGap = isDesktopPlatform ? 5 : 2;
     final bool isFocused = window.isFocused;
-    final Color titleBarBaseColor =
-        isFocused ? const Color(0xFF2C313A) : const Color(0xFF1E232A);
-    final Color titleBarTopColor =
-        isFocused ? const Color(0xFF343A45) : const Color(0xFF262C35);
-    final Color titleTextColor =
-        isFocused ? const Color(0xFFE7EDF7) : const Color(0xFFA3ADBA);
-    final Color iconColor =
-        isFocused ? const Color(0xFFD9E2EE) : const Color(0xFF8793A3);
+    final Color titleBarBaseColor = isFocused
+        ? const Color(0xFF2C313A)
+        : const Color(0xFF1E232A);
+    final Color titleBarTopColor = isFocused
+        ? const Color(0xFF343A45)
+        : const Color(0xFF262C35);
+    final Color titleTextColor = isFocused
+        ? const Color(0xFFE7EDF7)
+        : const Color(0xFFA3ADBA);
+    final Color iconColor = isFocused
+        ? const Color(0xFFD9E2EE)
+        : const Color(0xFF8793A3);
     final Color bottomLineColor = isFocused
         ? window.themeColor.withValues(alpha: 0.55)
         : const Color(0xFF353C47);
@@ -465,16 +542,13 @@ class DefaultWindowContent extends StatelessWidget {
 class WindowScope extends InheritedWidget {
   final String windowId;
 
-  const WindowScope({
-    super.key,
-    required this.windowId,
-    required super.child,
-  });
+  const WindowScope({super.key, required this.windowId, required super.child});
 
   static String? of(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<WindowScope>()?.windowId;
   }
 
   @override
-  bool updateShouldNotify(WindowScope oldWidget) => windowId != oldWidget.windowId;
+  bool updateShouldNotify(WindowScope oldWidget) =>
+      windowId != oldWidget.windowId;
 }
