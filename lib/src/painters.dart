@@ -12,7 +12,7 @@ class GridPatternPainter extends CustomPainter {
   const GridPatternPainter({
     this.scale = 1.0,
     this.translation = Offset.zero,
-    this.baseStep = 40.0,
+    this.baseStep = 100.0,
     this.lineColor = const Color(0x08FFFFFF),
   });
 
@@ -23,22 +23,60 @@ class GridPatternPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = lineColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-
     final double normalizedScale = scale <= 0 ? 1.0 : scale;
-    final double step = max(4.0, baseStep * normalizedScale);
-    final double startX = _startLine(translation.dx, step);
-    final double startY = _startLine(translation.dy, step);
+    final double minorStep = max(6.0, baseStep * normalizedScale);
+    final double majorStep = minorStep * 4;
 
-    for (double x = startX; x <= size.width; x += step) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    final Rect full = Offset.zero & size;
+    final Paint basePaint = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF171B22), Color(0xFF11161D), Color(0xFF0D1118)],
+        stops: [0.0, 0.45, 1.0],
+      ).createShader(full);
+    canvas.drawRect(full, basePaint);
+
+    final Paint minorGridPaint = Paint()
+      ..color = lineColor.withValues(alpha: 0.10)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.50;
+
+    final Paint majorGridPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.01)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.15;
+
+    final double minorStartX = _startLine(translation.dx, minorStep);
+    final double minorStartY = _startLine(translation.dy, minorStep);
+
+    for (double x = minorStartX; x <= size.width; x += minorStep) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), minorGridPaint);
     }
-    for (double y = startY; y <= size.height; y += step) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    for (double y = minorStartY; y <= size.height; y += minorStep) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), minorGridPaint);
     }
+
+    final double majorStartX = _startLine(translation.dx, majorStep);
+    final double majorStartY = _startLine(translation.dy, majorStep);
+
+    for (double x = majorStartX; x <= size.width; x += majorStep) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), majorGridPaint);
+    }
+    for (double y = majorStartY; y <= size.height; y += majorStep) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), majorGridPaint);
+    }
+
+
+
+    final Paint vignettePaint = Paint()
+      ..shader = RadialGradient(
+        center: Alignment.center,
+        radius: 1.05,
+        colors: [Colors.transparent, Colors.black.withValues(alpha: 0.28)],
+        stops: const [0.62, 1.0],
+      ).createShader(full);
+    canvas.drawRect(full, vignettePaint);
   }
 
   @override

@@ -236,15 +236,14 @@ class FastWindow extends StatelessWidget {
               child: Material(
                 color: Colors.transparent,
                 elevation: 8,
-                borderRadius: BorderRadius.circular(30),
+                borderRadius: BorderRadius.circular(20),
                 child: Container(
                   width: 220,
                   height: 60,
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: window.themeColor, width: 2),
+                    borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(
                     children: [
@@ -280,8 +279,8 @@ class FastWindow extends StatelessWidget {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 100),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(window.isMaximized ? 0 : 16),
+              // color: Colors.white,
+              borderRadius: BorderRadius.circular(window.isMaximized ? 0 : 10),
               boxShadow: window.isFocused && !window.isMaximized
                   ? [
                       BoxShadow(
@@ -296,14 +295,8 @@ class FastWindow extends StatelessWidget {
                         blurRadius: 10,
                       ),
                     ],
-              border: Border.all(
-                color: (window.isFocused && !window.isMaximized)
-                    ? Colors.blueAccent.withValues(alpha: 0.3)
-                    : Colors.transparent,
-                width: 0,
-              ),
             ),
-            clipBehavior: Clip.antiAlias,
+            clipBehavior: Clip.hardEdge,
             child: window.hasTitleBar
                 ? _buildWithTitleBar(scopedContent)
                 : _buildWithoutTitleBar(scopedContent),
@@ -340,9 +333,6 @@ class FastWindow extends StatelessWidget {
     final Color iconColor = isFocused
         ? const Color(0xFFD9E2EE)
         : const Color(0xFF8793A3);
-    final Color bottomLineColor = isFocused
-        ? window.themeColor.withValues(alpha: 0.55)
-        : const Color(0xFF353C47);
 
     return Column(
       children: [
@@ -363,9 +353,9 @@ class FastWindow extends StatelessWidget {
                 end: Alignment.bottomCenter,
                 colors: [titleBarTopColor, titleBarBaseColor],
               ),
-              border: Border(
-                bottom: BorderSide(color: bottomLineColor, width: 1),
-              ),
+              // border: Border(
+              //   bottom: BorderSide(color: bottomLineColor, width: 1),
+              // ),
             ),
             padding: EdgeInsets.symmetric(horizontal: toolbarHorizontalPadding),
             child: Row(
