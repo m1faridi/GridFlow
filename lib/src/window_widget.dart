@@ -60,6 +60,7 @@ class FastWindow extends StatelessWidget {
   final VoidCallback onMaximize;
   final VoidCallback onMinimize;
   final Function(Rect) onUpdate;
+  final VoidCallback onDragStart;
   final Function(DragUpdateDetails) onDragUpdate;
   final VoidCallback onDragEnd;
 
@@ -74,6 +75,7 @@ class FastWindow extends StatelessWidget {
     required this.onMaximize,
     required this.onMinimize,
     required this.onUpdate,
+    required this.onDragStart,
     required this.onDragUpdate,
     required this.onDragEnd,
   });
@@ -230,7 +232,10 @@ class FastWindow extends StatelessWidget {
             behavior: HitTestBehavior.opaque,
             child: GestureDetector(
               onTap: onMinimize,
-              onPanStart: (_) => onFocus(),
+              onPanStart: (_) {
+                onFocus();
+                onDragStart();
+              },
               onPanUpdate: onDragUpdate,
               onPanEnd: (_) => onDragEnd(),
               child: Material(
@@ -342,7 +347,10 @@ class FastWindow extends StatelessWidget {
             if (!window.isFocused) onFocus();
           },
           onDoubleTap: onMaximize,
-          onPanStart: (_) => onFocus(),
+          onPanStart: (_) {
+            onFocus();
+            onDragStart();
+          },
           onPanUpdate: onDragUpdate,
           onPanEnd: (_) => onDragEnd(),
           child: Container(
@@ -468,7 +476,10 @@ class FastWindow extends StatelessWidget {
               if (!window.isFocused) onFocus();
             },
             onDoubleTap: onMaximize,
-            onPanStart: (_) => onFocus(),
+            onPanStart: (_) {
+              onFocus();
+              onDragStart();
+            },
             onPanUpdate: onDragUpdate,
             onPanEnd: (_) => onDragEnd(),
             child: Container(color: Colors.transparent),

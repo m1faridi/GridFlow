@@ -101,6 +101,7 @@ class _GridDesktopState extends State<GridDesktop>
   static const double _edgeDragSpeedMin = 220.0;
   static const double _edgeDragSpeedMax = 2200.0;
   static const double _edgeDragInfluenceMax = 1.2;
+  static const double _dragIntentActivationDistance = 10.0;
 
   late final ScrollController _horizontalScrollController;
   late final ScrollController _verticalScrollController;
@@ -110,6 +111,10 @@ class _GridDesktopState extends State<GridDesktop>
   String? _activeDragWindowId;
   Size? _activeDragScreenSize;
   EdgeInsets? _activeDragPadding;
+  String? _dragIntentWindowId;
+  bool _dragIntentConfirmed = false;
+  double _dragIntentTravel = 0.0;
+  Offset _lastConfirmedDragDelta = Offset.zero;
   Offset _edgeAutoScrollVelocity = Offset.zero;
   DateTime? _edgeAutoScrollLastTickAt;
   Offset _edgeDragVelocity = Offset.zero;
@@ -294,6 +299,18 @@ class _GridDesktopState extends State<GridDesktop>
       ? _verticalScrollController.offset
       : 0;
 
+  void _beginWindowDragGesture(String id) {
+    _dragIntentWindowId = id;
+    _dragIntentConfirmed = false;
+    _dragIntentTravel = 0.0;
+    _lastConfirmedDragDelta = Offset.zero;
+    _activeDragWindowId = null;
+    _activeDragScreenSize = null;
+    _activeDragPadding = null;
+    _edgeDragVelocity = Offset.zero;
+    _edgeDragLastSampleAt = null;
+  }
+
   void _panCanvasByDelta(Offset delta) {
     if (_horizontalScrollController.hasClients) {
       final position = _horizontalScrollController.position;
@@ -316,15 +333,6 @@ class _GridDesktopState extends State<GridDesktop>
     }
   }
 
-  Rect _worldRectToViewportRect(Rect worldRect) {
-    final double scale = _backgroundScale <= 0 ? 1.0 : _backgroundScale;
-    final double left = (worldRect.left * scale) + _backgroundOffset.dx;
-    final double top = (worldRect.top * scale) + _backgroundOffset.dy;
-    final double right = (worldRect.right * scale) + _backgroundOffset.dx;
-    final double bottom = (worldRect.bottom * scale) + _backgroundOffset.dy;
-    return Rect.fromLTRB(left, top, right, bottom);
-  }
-
   double _edgeScrollSpeedFromOverlap(double overlap) {
     if (overlap <= 0.0) return 0.0;
     final double t = (overlap / _edgeAutoScrollRampDistance)
@@ -333,6 +341,15 @@ class _GridDesktopState extends State<GridDesktop>
     final double eased = Curves.easeOutCubic.transform(t);
     return _edgeAutoScrollBaseSpeed +
         ((_edgeAutoScrollMaxSpeed - _edgeAutoScrollBaseSpeed) * eased);
+  }
+
+  Rect _worldRectToViewportRect(Rect worldRect) {
+    final double scale = _backgroundScale <= 0 ? 1.0 : _backgroundScale;
+    final double left = (worldRect.left * scale) + _backgroundOffset.dx;
+    final double top = (worldRect.top * scale) + _backgroundOffset.dy;
+    final double right = (worldRect.right * scale) + _backgroundOffset.dx;
+    final double bottom = (worldRect.bottom * scale) + _backgroundOffset.dy;
+    return Rect.fromLTRB(left, top, right, bottom);
   }
 
   Offset _computeEdgeAutoScrollForWindow(
@@ -518,6 +535,25 @@ class _GridDesktopState extends State<GridDesktop>
     return 1.0 + (normalized * _edgeDragInfluenceMax);
   }
 
+  double _axisAutoScrollWithDragIntent(double targetAxis, double dragAxis) {
+    if (targetAxis == 0.0) return 0.0;
+    if (dragAxis.abs() < 0.01) return 0.0;
+    return targetAxis.sign == dragAxis.sign ? targetAxis : 0.0;
+  }
+
+  Offset _applyDragDirectionGate(Offset targetAutoScroll) {
+    return Offset(
+      _axisAutoScrollWithDragIntent(
+        targetAutoScroll.dx,
+        _lastConfirmedDragDelta.dx,
+      ),
+      _axisAutoScrollWithDragIntent(
+        targetAutoScroll.dy,
+        _lastConfirmedDragDelta.dy,
+      ),
+    );
+  }
+
   void _tickEdgeAutoScroll() {
     if (!mounted) {
       _stopEdgeAutoScrollLoop();
@@ -527,7 +563,9 @@ class _GridDesktopState extends State<GridDesktop>
     final String? id = _activeDragWindowId;
     final Size? screenSize = _activeDragScreenSize;
     final EdgeInsets? padding = _activeDragPadding;
-    if (id == null || screenSize == null || padding == null) return;
+    if (id == null || screenSize == null || padding == null) {
+      return;
+    }
 
     final int index = windows.indexWhere((w) => w.id == id);
     if (index == -1) {
@@ -549,10 +587,13 @@ class _GridDesktopState extends State<GridDesktop>
             .toDouble();
 
     final bool isMobile = screenSize.width < 700;
-    final Offset baseTargetAutoScroll = _computeEdgeAutoScrollForWindow(
+    final Offset edgeTargetAutoScroll = _computeEdgeAutoScrollForWindow(
       window.rect,
       screenSize,
       padding,
+    );
+    final Offset baseTargetAutoScroll = _applyDragDirectionGate(
+      edgeTargetAutoScroll,
     );
     final double dragSpeedMultiplier = _dragSpeedMultiplierForTarget(
       baseTargetAutoScroll,
@@ -1072,9 +1113,22 @@ class _GridDesktopState extends State<GridDesktop>
     Size screenSize,
     EdgeInsets padding,
   ) {
+    if (_dragIntentWindowId != id) {
+      _beginWindowDragGesture(id);
+    }
+
+    if (!_dragIntentConfirmed) {
+      _dragIntentTravel += details.delta.distance;
+      if (_dragIntentTravel < _dragIntentActivationDistance) {
+        return;
+      }
+      _dragIntentConfirmed = true;
+    }
+
     _activeDragWindowId = id;
     _activeDragScreenSize = screenSize;
     _activeDragPadding = padding;
+    _lastConfirmedDragDelta = details.delta;
     _ensureEdgeAutoScrollLoop();
     _recordDragVelocity(details.delta);
 
@@ -1107,6 +1161,10 @@ class _GridDesktopState extends State<GridDesktop>
   }
 
   void onWindowDragEnd(String id, Size screenSize, EdgeInsets padding) {
+    _dragIntentWindowId = null;
+    _dragIntentConfirmed = false;
+    _dragIntentTravel = 0.0;
+    _lastConfirmedDragDelta = Offset.zero;
     _stopEdgeAutoScrollLoop();
   }
 
@@ -1356,6 +1414,8 @@ class _GridDesktopState extends State<GridDesktop>
                                           }
                                         });
                                       },
+                                      onDragStart: () =>
+                                          _beginWindowDragGesture(window.id),
                                       onDragUpdate: (d) => onWindowDragUpdate(
                                         window.id,
                                         d,
