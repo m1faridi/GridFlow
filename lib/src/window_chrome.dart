@@ -11,9 +11,10 @@ enum WindowChromeStyle {
   macos,
 }
 
-/// سبک پیش‌فرض بر اساس پلتفرم: macOS چراغ ترافیکی، بقیه سبک ویندوز.
+/// سبک پیش‌فرض بر اساس پلتفرم: macOS و Android چراغ ترافیکی، بقیه ویندوز.
 WindowChromeStyle defaultWindowChromeStyle() {
-  return defaultTargetPlatform == TargetPlatform.macOS
+  return defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.android
       ? WindowChromeStyle.macos
       : WindowChromeStyle.windows;
 }

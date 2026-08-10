@@ -7,6 +7,9 @@ import 'package:flutter_box_transform/flutter_box_transform.dart';
 import 'models.dart';
 import 'window_chrome.dart';
 
+/// اندازهٔ کارت فشرده‌ای که جای پنجرهٔ minimize شده نمایش داده می‌شود.
+const Size kMinimizedWindowSize = Size(196, 46);
+
 /// گریپ لمسی گوشهٔ پایین-راست: یک قوس نرم هم‌راستا با انحنای گوشهٔ پنجره
 /// (سبک iPadOS)، فقط برای پلتفرم‌های تاچ.
 class _ResizeGripPainter extends CustomPainter {
@@ -191,7 +194,7 @@ class FastWindow extends StatelessWidget {
     return TransformableBox(
       rect: renderRect ?? window.rect,
       constraints: window.isMinimized
-          ? BoxConstraints.tight(const Size(220, 60))
+          ? BoxConstraints.tight(kMinimizedWindowSize)
           : const BoxConstraints(minWidth: 200, minHeight: 150),
       enabledHandles: canResize
           ? (isDesktopPlatform ? allHandles : mobileHandles)
@@ -240,63 +243,13 @@ class FastWindow extends StatelessWidget {
       contentBuilder: (context, rect, flip) {
         // --- بخش ۱: حالت مینیمایز ---
         if (window.isMinimized) {
-          return Listener(
-            behavior: HitTestBehavior.opaque,
-            onPointerDown: (event) {
-              if (event.kind == PointerDeviceKind.mouse &&
-                  (event.buttons & kPrimaryMouseButton) == 0) {
-                return;
-              }
-              if (!window.isFocused) onFocus();
-            },
-            child: MouseRegion(
-              cursor: SystemMouseCursors.click,
-              child: GestureDetector(
-                onTap: onMinimize,
-                onPanStart: (_) {
-                  onFocus();
-                  onDragStart();
-                },
-                onPanUpdate: onDragUpdate,
-                onPanEnd: (_) => onDragEnd(),
-                child: Material(
-                  color: Colors.transparent,
-                  elevation: 8,
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    width: 220,
-                    height: 60,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      children: [
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            window.title,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(
-                          CupertinoIcons.chevron_up,
-                          size: 16,
-                          color: Colors.grey,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          return _MinimizedWindowCard(
+            window: window,
+            onFocus: onFocus,
+            onRestore: onMinimize,
+            onDragStart: onDragStart,
+            onDragUpdate: onDragUpdate,
+            onDragEnd: onDragEnd,
           );
         }
 
@@ -475,6 +428,174 @@ class FastWindow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _MinimizedWindowCard extends StatefulWidget {
+  final WindowItem window;
+  final VoidCallback onFocus;
+  final VoidCallback onRestore;
+  final VoidCallback onDragStart;
+  final ValueChanged<DragUpdateDetails> onDragUpdate;
+  final VoidCallback onDragEnd;
+
+  const _MinimizedWindowCard({
+    required this.window,
+    required this.onFocus,
+    required this.onRestore,
+    required this.onDragStart,
+    required this.onDragUpdate,
+    required this.onDragEnd,
+  });
+
+  @override
+  State<_MinimizedWindowCard> createState() => _MinimizedWindowCardState();
+}
+
+class _MinimizedWindowCardState extends State<_MinimizedWindowCard> {
+  bool _hovered = false;
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool emphasized = widget.window.isFocused || _hovered;
+    final Color surface = emphasized
+        ? const Color(0xFF303641)
+        : const Color(0xFF252A32);
+    final Color border = emphasized
+        ? Colors.white.withValues(alpha: 0.14)
+        : Colors.white.withValues(alpha: 0.07);
+
+    return Semantics(
+      button: true,
+      label: 'Restore ${widget.window.title}',
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (event) {
+          if (event.kind == PointerDeviceKind.mouse &&
+              (event.buttons & kPrimaryMouseButton) == 0) {
+            return;
+          }
+          if (!widget.window.isFocused) widget.onFocus();
+          setState(() => _pressed = true);
+        },
+        onPointerUp: (_) {
+          if (_pressed) setState(() => _pressed = false);
+        },
+        onPointerCancel: (_) {
+          if (_pressed) setState(() => _pressed = false);
+        },
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          child: GestureDetector(
+            onTap: widget.onRestore,
+            onPanStart: (_) {
+              widget.onFocus();
+              widget.onDragStart();
+            },
+            onPanUpdate: widget.onDragUpdate,
+            onPanEnd: (_) {
+              setState(() => _pressed = false);
+              widget.onDragEnd();
+            },
+            onPanCancel: () {
+              setState(() => _pressed = false);
+              widget.onDragEnd();
+            },
+            child: AnimatedScale(
+              scale: _pressed ? 0.985 : 1,
+              duration: const Duration(milliseconds: 90),
+              curve: Curves.easeOut,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 140),
+                curve: Curves.easeOut,
+                width: kMinimizedWindowSize.width,
+                height: kMinimizedWindowSize.height,
+                padding: const EdgeInsets.fromLTRB(9, 6, 7, 6),
+                decoration: BoxDecoration(
+                  color: surface,
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(color: border),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(
+                        alpha: emphasized ? 0.24 : 0.16,
+                      ),
+                      blurRadius: emphasized ? 14 : 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: widget.window.themeColor.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      alignment: Alignment.center,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: widget.window.themeColor,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: widget.window.themeColor.withValues(
+                                alpha: 0.45,
+                              ),
+                              blurRadius: 5,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        widget.window.title,
+                        style: TextStyle(
+                          color: emphasized
+                              ? const Color(0xFFF1F4F8)
+                              : const Color(0xFFC1C8D2),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.1,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 140),
+                      width: 27,
+                      height: 27,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(
+                          alpha: _hovered ? 0.10 : 0.05,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        CupertinoIcons.arrow_up_left_arrow_down_right,
+                        size: 12,
+                        color: Color(0xFFCAD2DE),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

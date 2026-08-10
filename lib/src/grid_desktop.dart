@@ -71,7 +71,7 @@ class GridDesktop extends StatefulWidget {
   final bool hasTitleBar;
 
   /// سبک دکمه‌های کنترل پنجره؛ اگر null باشد از پلتفرم تشخیص داده می‌شود
-  /// (macOS چراغ ترافیکی، بقیه سبک Windows 11).
+  /// (macOS و Android چراغ ترافیکی، بقیه سبک Windows 11).
   final WindowChromeStyle? chromeStyle;
 
   const GridDesktop({
@@ -1328,7 +1328,12 @@ class _GridDesktopState extends State<GridDesktop>
         window.preMinRect = window.rect;
         window.isMinimized = true;
         window.isMaximized = false;
-        window.rect = Rect.fromLTWH(window.rect.left, window.rect.top, 220, 60);
+        window.rect = Rect.fromLTWH(
+          window.rect.left,
+          window.rect.top,
+          kMinimizedWindowSize.width,
+          kMinimizedWindowSize.height,
+        );
       }
     });
   }
