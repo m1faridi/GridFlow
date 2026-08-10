@@ -1,50 +1,50 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_box_transform/flutter_box_transform.dart';
 
 import 'models.dart';
+import 'window_chrome.dart';
 
+/// گریپ لمسی گوشهٔ پایین-راست: یک قوس نرم هم‌راستا با انحنای گوشهٔ پنجره
+/// (سبک iPadOS)، فقط برای پلتفرم‌های تاچ.
 class _ResizeGripPainter extends CustomPainter {
   final Color color;
-  final double strokeWidth;
-  final double inset;
-  final double legLength;
 
-  const _ResizeGripPainter({
-    required this.color,
-    required this.strokeWidth,
-    required this.inset,
-    required this.legLength,
-  });
+  const _ResizeGripPainter({required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
+    const double inset = 4.0;
+    const double radius = 13.0;
+    final Rect arcRect = Rect.fromCircle(
+      center: Offset(size.width - inset - radius, size.height - inset - radius),
+      radius: radius,
+    );
+    // زاویه‌ها بر حسب رادیان: ربع پایین-راست (شرق تا جنوب) با کمی فاصله از سرها
+    const double startAngle = 8 * 3.1415926535 / 180;
+    const double sweepAngle = 74 * 3.1415926535 / 180;
+
+    final Paint shadowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.35)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 6.5
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
+    canvas.drawArc(arcRect, startAngle, sweepAngle, false, shadowPaint);
+
+    final Paint gripPaint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    final double right = size.width - inset;
-    final double bottom = size.height - inset;
-    final double left = right - legLength;
-    final double top = bottom - legLength;
-
-    final path = Path()
-      ..moveTo(left, bottom)
-      ..lineTo(right, bottom)
-      ..lineTo(right, top);
-    canvas.drawPath(path, paint);
+      ..strokeWidth = 4.5
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(arcRect, startAngle, sweepAngle, false, gripPaint);
   }
 
   @override
   bool shouldRepaint(covariant _ResizeGripPainter oldDelegate) {
-    return oldDelegate.color != color ||
-        oldDelegate.strokeWidth != strokeWidth ||
-        oldDelegate.inset != inset ||
-        oldDelegate.legLength != legLength;
+    return oldDelegate.color != color;
   }
 }
 
@@ -55,6 +55,10 @@ class FastWindow extends StatelessWidget {
   final Rect? renderRect;
   final Size desktopSize;
   final EdgeInsets padding;
+  final WindowChromeStyle? chromeStyle;
+
+  /// مقیاس فعلی بوم؛ برای ثابت نگه داشتن اندازهٔ هندل‌های resize روی صفحه.
+  final double canvasScale;
   final VoidCallback onFocus;
   final VoidCallback onClose;
   final VoidCallback onMaximize;
@@ -70,6 +74,8 @@ class FastWindow extends StatelessWidget {
     this.renderRect,
     required this.desktopSize,
     required this.padding,
+    this.chromeStyle,
+    this.canvasScale = 1.0,
     required this.onFocus,
     required this.onClose,
     required this.onMaximize,
@@ -80,25 +86,21 @@ class FastWindow extends StatelessWidget {
     required this.onDragEnd,
   });
 
-  Widget _buildBottomRightResizeGrip({required bool canResize}) {
+  Widget _buildBottomRightResizeGrip({
+    required bool canResize,
+    required double handleTapSize,
+  }) {
     if (!canResize) return const SizedBox.expand();
 
-    return Align(
-      alignment: Alignment.bottomRight,
-      child: IgnorePointer(
-        child: Transform.translate(
-          offset: Offset(-11.0, -11.0),
-          child: SizedBox(
-            width: 30,
-            height: 30,
-            child: CustomPaint(
-              painter: _ResizeGripPainter(
-                color: Colors.white.withValues(alpha: 0.92),
-                strokeWidth: 3.5,
-                inset: 0.25,
-                legLength: 12.8,
-              ),
-            ),
+    // هندل روی گوشهٔ پنجره سنتر شده؛ با این جابجایی، لنگر قوس دقیقاً
+    // روی گوشهٔ واقعی پنجره می‌افتد و قوس داخل پنجره رسم می‌شود.
+    return IgnorePointer(
+      child: Transform.translate(
+        offset: Offset(-handleTapSize / 2, -handleTapSize / 2),
+        child: CustomPaint(
+          size: Size(handleTapSize, handleTapSize),
+          painter: _ResizeGripPainter(
+            color: Colors.white.withValues(alpha: 0.95),
           ),
         ),
       ),
@@ -106,7 +108,7 @@ class FastWindow extends StatelessWidget {
   }
 
   MouseCursor _cornerCursor(HandlePosition handle) {
-    if (defaultTargetPlatform == TargetPlatform.macOS) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
       switch (handle) {
         case HandlePosition.topLeft:
         case HandlePosition.topRight:
@@ -154,9 +156,14 @@ class FastWindow extends StatelessWidget {
         defaultTargetPlatform == TargetPlatform.macOS ||
         defaultTargetPlatform == TargetPlatform.windows ||
         defaultTargetPlatform == TargetPlatform.linux;
-    final bool isMobileOrTablet = desktopSize.shortestSide <= 1024;
     final bool canResize = !window.isMaximized && !window.isMinimized;
-    final double resizeHandleTapSize = isDesktopPlatform ? 24 : 32;
+    // روی دسکتاپ هندل‌ها کاملاً «بیرون» قاب پنجره قرار می‌گیرند (مثل فریم
+    // نامرئی ویندوز): هیچ‌وقت روی نوار عنوان یا دکمه‌ها نمی‌افتند و کلیک
+    // نمی‌دزدند. اندازه هم با زوم جبران می‌شود تا روی صفحه ثابت بماند.
+    final double safeScale = canvasScale <= 0 ? 1.0 : canvasScale;
+    final double resizeHandleTapSize = isDesktopPlatform
+        ? (14.0 / safeScale).clamp(10.0, 36.0).toDouble()
+        : 32;
 
     final Set<HandlePosition> allHandles = {
       HandlePosition.topLeft,
@@ -193,16 +200,19 @@ class FastWindow extends StatelessWidget {
           ? (isDesktopPlatform ? allHandles : mobileHandles)
           : const {},
       cornerHandleBuilder: (context, handle) {
+        // با موس، کرسر resize کافی است و خط/گریپ لازم نیست؛
+        // گریپ فقط برای پلتفرم‌های لمسی نمایش داده می‌شود.
         if (isDesktopPlatform) {
           return MouseRegion(
             cursor: _cornerCursor(handle),
-            child: isMobileOrTablet && handle == HandlePosition.bottomRight
-                ? _buildBottomRightResizeGrip(canResize: canResize)
-                : const SizedBox.expand(),
+            child: const SizedBox.expand(),
           );
         }
-        return isMobileOrTablet && handle == HandlePosition.bottomRight
-            ? _buildBottomRightResizeGrip(canResize: canResize)
+        return handle == HandlePosition.bottomRight
+            ? _buildBottomRightResizeGrip(
+                canResize: canResize,
+                handleTapSize: resizeHandleTapSize,
+              )
             : const SizedBox.expand();
       },
       sideHandleBuilder: (context, handle) => isDesktopPlatform
@@ -211,7 +221,9 @@ class FastWindow extends StatelessWidget {
               child: const SizedBox.expand(),
             )
           : const SizedBox.expand(),
-      handleAlignment: HandleAlignment.center,
+      handleAlignment: isDesktopPlatform
+          ? HandleAlignment.outside
+          : HandleAlignment.center,
       handleTapSize: resizeHandleTapSize,
       draggable: false,
       allowFlippingWhileResizing: false,
@@ -230,47 +242,57 @@ class FastWindow extends StatelessWidget {
         if (window.isMinimized) {
           return Listener(
             behavior: HitTestBehavior.opaque,
-            child: GestureDetector(
-              onTap: onMinimize,
-              onPanStart: (_) {
-                onFocus();
-                onDragStart();
-              },
-              onPanUpdate: onDragUpdate,
-              onPanEnd: (_) => onDragEnd(),
-              child: Material(
-                color: Colors.transparent,
-                elevation: 8,
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  width: 220,
-                  height: 60,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          window.title,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
+            onPointerDown: (event) {
+              if (event.kind == PointerDeviceKind.mouse &&
+                  (event.buttons & kPrimaryMouseButton) == 0) {
+                return;
+              }
+              if (!window.isFocused) onFocus();
+            },
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                onTap: onMinimize,
+                onPanStart: (_) {
+                  onFocus();
+                  onDragStart();
+                },
+                onPanUpdate: onDragUpdate,
+                onPanEnd: (_) => onDragEnd(),
+                child: Material(
+                  color: Colors.transparent,
+                  elevation: 8,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    width: 220,
+                    height: 60,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            window.title,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Icon(
-                        CupertinoIcons.chevron_up,
-                        size: 16,
-                        color: Colors.grey,
-                      ),
-                    ],
+                        const SizedBox(width: 4),
+                        const Icon(
+                          CupertinoIcons.chevron_up,
+                          size: 16,
+                          color: Colors.grey,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -308,23 +330,29 @@ class FastWindow extends StatelessWidget {
           ),
         );
 
-        return Listener(behavior: HitTestBehavior.opaque, child: windowBody);
+        return Listener(
+          behavior: HitTestBehavior.opaque,
+          // فوکوس فوری با فشردن دکمهٔ اصلی ماوس، مثل سیستم‌عامل واقعی.
+          // دکمهٔ وسط (پنِ بوم) نباید پنجره را جلو بیاورد.
+          onPointerDown: (event) {
+            if (event.kind == PointerDeviceKind.mouse &&
+                (event.buttons & kPrimaryMouseButton) == 0) {
+              return;
+            }
+            if (!window.isFocused) onFocus();
+          },
+          // RepaintBoundary: جابجایی یا انیمیشن پنجره‌های دیگر باعث
+          // رندر دوباره این پنجره نمی‌شود.
+          child: RepaintBoundary(child: windowBody),
+        );
       },
     );
   }
 
   Widget _buildWithTitleBar(Widget scopedContent) {
-    const double toolbarHeight = 30;
-    const double toolbarHorizontalPadding = 8;
+    const double toolbarHeight = 34;
     const double titleFontSize = 12;
-    const double controlButtonSize = 24;
-    const double controlIconSize = 14;
-    const double maximizeIconSize = 13;
-    final bool isDesktopPlatform =
-        defaultTargetPlatform == TargetPlatform.macOS ||
-        defaultTargetPlatform == TargetPlatform.windows ||
-        defaultTargetPlatform == TargetPlatform.linux;
-    final double controlButtonGap = isDesktopPlatform ? 5 : 2;
+    final WindowChromeStyle style = chromeStyle ?? defaultWindowChromeStyle();
     final bool isFocused = window.isFocused;
     final Color titleBarBaseColor = isFocused
         ? const Color(0xFF2C313A)
@@ -339,13 +367,57 @@ class FastWindow extends StatelessWidget {
         ? const Color(0xFFD9E2EE)
         : const Color(0xFF8793A3);
 
+    final Widget captionControls = WindowCaptionControls(
+      style: style,
+      isFocused: isFocused,
+      isMaximized: window.isMaximized,
+      isClosable: window.isClosable,
+      height: toolbarHeight,
+      iconColor: iconColor,
+      onMinimize: onMinimize,
+      onMaximize: onMaximize,
+      onClose: onClose,
+    );
+
+    final Widget titleText = Text(
+      window.title,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontSize: titleFontSize,
+        fontWeight: FontWeight.w600,
+        color: titleTextColor,
+      ),
+    );
+
+    final Widget titleBarContent = style == WindowChromeStyle.macos
+        ? Stack(
+            children: [
+              Positioned.fill(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 76),
+                  child: Center(child: titleText),
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: captionControls,
+              ),
+            ],
+          )
+        : Row(
+            children: [
+              const SizedBox(width: 12),
+              Expanded(child: titleText),
+              const SizedBox(width: 8),
+              captionControls,
+            ],
+          );
+
     return Column(
       children: [
         GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTapDown: (_) {
-            if (!window.isFocused) onFocus();
-          },
           onDoubleTap: onMaximize,
           onPanStart: (_) {
             onFocus();
@@ -361,88 +433,14 @@ class FastWindow extends StatelessWidget {
                 end: Alignment.bottomCenter,
                 colors: [titleBarTopColor, titleBarBaseColor],
               ),
-              // border: Border(
-              //   bottom: BorderSide(color: bottomLineColor, width: 1),
-              // ),
             ),
-            padding: EdgeInsets.symmetric(horizontal: toolbarHorizontalPadding),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    window.title,
-                    style: TextStyle(
-                      fontSize: titleFontSize,
-                      fontWeight: FontWeight.w600,
-                      color: titleTextColor,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(
-                    CupertinoIcons.minus,
-                    size: controlIconSize,
-                    color: iconColor,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                  constraints: BoxConstraints.tightFor(
-                    width: controlButtonSize,
-                    height: controlButtonSize,
-                  ),
-                  padding: EdgeInsets.zero,
-                  splashRadius: controlButtonSize / 2,
-                  onPressed: onMinimize,
-                ),
-                SizedBox(width: controlButtonGap),
-                IconButton(
-                  icon: Icon(
-                    window.isMaximized
-                        ? CupertinoIcons.arrow_down_right_arrow_up_left
-                        : CupertinoIcons.crop,
-                    color: iconColor,
-                    size: maximizeIconSize,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                  constraints: BoxConstraints.tightFor(
-                    width: controlButtonSize,
-                    height: controlButtonSize,
-                  ),
-                  padding: EdgeInsets.zero,
-                  splashRadius: controlButtonSize / 2,
-                  onPressed: onMaximize,
-                ),
-                if (window.isClosable) ...[
-                  SizedBox(width: controlButtonGap),
-                  IconButton(
-                    icon: Icon(
-                      CupertinoIcons.xmark,
-                      color: iconColor,
-                      size: controlIconSize,
-                    ),
-                    visualDensity: VisualDensity.compact,
-                    constraints: BoxConstraints.tightFor(
-                      width: controlButtonSize,
-                      height: controlButtonSize,
-                    ),
-                    padding: EdgeInsets.zero,
-                    splashRadius: controlButtonSize / 2,
-                    onPressed: onClose,
-                  ),
-                ],
-              ],
-            ),
+            child: titleBarContent,
           ),
         ),
         Expanded(
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTapDown: (_) {
-              if (!window.isFocused) onFocus();
-            },
-            child: AbsorbPointer(
-              absorbing: !window.isFocused,
-              child: scopedContent,
-            ),
+          child: AbsorbPointer(
+            absorbing: !window.isFocused,
+            child: scopedContent,
           ),
         ),
       ],
@@ -453,15 +451,9 @@ class FastWindow extends StatelessWidget {
     return Stack(
       children: [
         Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTapDown: (_) {
-              if (!window.isFocused) onFocus();
-            },
-            child: AbsorbPointer(
-              absorbing: !window.isFocused,
-              child: scopedContent,
-            ),
+          child: AbsorbPointer(
+            absorbing: !window.isFocused,
+            child: scopedContent,
           ),
         ),
 
@@ -472,9 +464,6 @@ class FastWindow extends StatelessWidget {
           height: 30,
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
-            onTapDown: (_) {
-              if (!window.isFocused) onFocus();
-            },
             onDoubleTap: onMaximize,
             onPanStart: (_) {
               onFocus();

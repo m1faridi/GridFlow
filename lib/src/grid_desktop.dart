@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show FontFeature, lerpDouble;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'models.dart';
 import 'painters.dart';
+import 'window_chrome.dart';
 import 'window_widget.dart';
 
 abstract class DesktopController {
@@ -67,6 +70,10 @@ class GridDesktop extends StatefulWidget {
   final bool isWindowMode;
   final bool hasTitleBar;
 
+  /// سبک دکمه‌های کنترل پنجره؛ اگر null باشد از پلتفرم تشخیص داده می‌شود
+  /// (macOS چراغ ترافیکی، بقیه سبک Windows 11).
+  final WindowChromeStyle? chromeStyle;
+
   const GridDesktop({
     super.key,
     required this.apps,
@@ -74,6 +81,7 @@ class GridDesktop extends StatefulWidget {
     this.autoStartApps,
     this.isWindowMode = false,
     this.hasTitleBar = true,
+    this.chromeStyle,
   });
 
   @override
@@ -81,7 +89,7 @@ class GridDesktop extends StatefulWidget {
 }
 
 class _GridDesktopState extends State<GridDesktop>
-    with SingleTickerProviderStateMixin
+    with TickerProviderStateMixin
     implements DesktopController {
   static const double _defaultWindowWidth = 500;
   static const double _defaultWindowHeight = 760;
@@ -131,6 +139,21 @@ class _GridDesktopState extends State<GridDesktop>
 
   late AnimationController _lineAnimationController;
 
+  // زوم نرم (دکمه‌های پنل زوم و Fit all)
+  late AnimationController _zoomAnimationController;
+  double _zoomAnimStartScale = 1.0;
+  double _zoomAnimTargetScale = 1.0;
+  Offset _zoomAnimStartOffset = Offset.zero;
+  Offset _zoomAnimTargetOffset = Offset.zero;
+  double _zoomAnimStartH = 0.0;
+  double _zoomAnimTargetH = 0.0;
+  double _zoomAnimStartV = 0.0;
+  double _zoomAnimTargetV = 0.0;
+
+  // پن با دکمهٔ وسط موس
+  int _middlePanPointer = -1;
+  bool _isPanningCanvas = false;
+
   @override
   void initState() {
     super.initState();
@@ -145,12 +168,18 @@ class _GridDesktopState extends State<GridDesktop>
       duration: const Duration(seconds: 2),
     )..repeat();
 
+    _zoomAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 240),
+    )..addListener(_onZoomAnimationTick);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _ensureInitialCanvasOffset();
     });
 
     if (widget.autoStartApps != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         for (var app in widget.autoStartApps!) {
           openApp(app);
         }
@@ -177,6 +206,7 @@ class _GridDesktopState extends State<GridDesktop>
     _horizontalScrollController.dispose();
     _verticalScrollController.dispose();
     _lineAnimationController.dispose();
+    _zoomAnimationController.dispose();
     super.dispose();
   }
 
@@ -677,56 +707,67 @@ class _GridDesktopState extends State<GridDesktop>
     return renderObject.globalToLocal(globalPosition);
   }
 
-  void _onBackgroundScaleStart(ScaleStartDetails details) {
-    _gestureStartBackgroundScale = _backgroundScale;
-    _lastGlobalFocalPoint = details.focalPoint;
-    final Offset focalInViewport = _toCanvasViewportLocal(details.focalPoint);
-    _gestureSceneFocalPoint =
-        (focalInViewport - _backgroundOffset) / _backgroundScale;
+  void _stopZoomAnimation() {
+    if (_zoomAnimationController.isAnimating) _zoomAnimationController.stop();
   }
 
-  void _onBackgroundScaleUpdate(ScaleUpdateDetails details, Size canvasSize) {
-    final bool isPinchGesture =
-        details.pointerCount == 0 || details.pointerCount > 1;
-    if (!isPinchGesture) {
-      final Offset globalDelta = details.focalPoint - _lastGlobalFocalPoint;
-      _lastGlobalFocalPoint = details.focalPoint;
-      _panCanvasByDelta(globalDelta);
-      return;
-    }
-
-    final double nextScale = (_gestureStartBackgroundScale * details.scale)
-        .clamp(_minBackgroundScale, _maxBackgroundScale)
-        .toDouble();
-    final Offset focalInViewport = _toCanvasViewportLocal(details.focalPoint);
-
-    final Offset rawOffset =
-        focalInViewport - (_gestureSceneFocalPoint * nextScale);
-    final Offset nextOffset = _clampBackgroundOffset(
-      rawOffset,
-      canvasSize,
-      nextScale,
+  void _onZoomAnimationTick() {
+    final double t = Curves.easeOutCubic.transform(
+      _zoomAnimationController.value,
     );
-
-    if (nextScale == _backgroundScale && nextOffset == _backgroundOffset)
-      return;
-
     setState(() {
-      _backgroundScale = nextScale;
-      _backgroundOffset = nextOffset;
+      _backgroundScale = lerpDouble(
+        _zoomAnimStartScale,
+        _zoomAnimTargetScale,
+        t,
+      )!;
+      _backgroundOffset = Offset.lerp(
+        _zoomAnimStartOffset,
+        _zoomAnimTargetOffset,
+        t,
+      )!;
     });
+
+    if (_horizontalScrollController.hasClients) {
+      final position = _horizontalScrollController.position;
+      final double target = lerpDouble(_zoomAnimStartH, _zoomAnimTargetH, t)!
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      if ((target - position.pixels).abs() > 0.1) {
+        _horizontalScrollController.jumpTo(target);
+      }
+    }
+    if (_verticalScrollController.hasClients) {
+      final position = _verticalScrollController.position;
+      final double target = lerpDouble(_zoomAnimStartV, _zoomAnimTargetV, t)!
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      if ((target - position.pixels).abs() > 0.1) {
+        _verticalScrollController.jumpTo(target);
+      }
+    }
   }
 
-  void _onBackgroundPointerSignal(PointerSignalEvent event, Size canvasSize) {
-    if (event is! PointerScrollEvent) return;
-    if (event.scrollDelta.dy == 0) return;
-
-    final double zoomFactor = math.exp(-event.scrollDelta.dy * 0.0015);
-    final Offset focalInViewport = _toCanvasViewportLocal(event.position);
-    _zoomBackgroundAtViewportPoint(focalInViewport, canvasSize, zoomFactor);
+  void _animateCanvasTo({
+    required double scale,
+    required Offset offset,
+    double? hScroll,
+    double? vScroll,
+  }) {
+    _stopZoomAnimation();
+    _zoomAnimStartScale = _backgroundScale;
+    _zoomAnimTargetScale = scale;
+    _zoomAnimStartOffset = _backgroundOffset;
+    _zoomAnimTargetOffset = offset;
+    _zoomAnimStartH = _horizontalOffset();
+    _zoomAnimTargetH = hScroll ?? _zoomAnimStartH;
+    _zoomAnimStartV = _verticalOffset();
+    _zoomAnimTargetV = vScroll ?? _zoomAnimStartV;
+    _zoomAnimationController.forward(from: 0);
   }
 
-  void _zoomBackgroundAtViewportPoint(
+  /// زوم نرم حول یک نقطه از بوم (مثلاً مرکز دید) — برای دکمه‌های +/− پنل زوم.
+  void _animatedZoomAtViewportPoint(
     Offset viewportPoint,
     Size canvasSize,
     double zoomFactor,
@@ -744,11 +785,188 @@ class _GridDesktopState extends State<GridDesktop>
       canvasSize,
       nextScale,
     );
+    // باقی‌ماندهٔ کلمپ به اسکرول منتقل می‌شود تا نقطهٔ کانونی واقعاً ثابت بماند.
+    final Offset residual = rawOffset - nextOffset;
+    double? hTarget;
+    double? vTarget;
+    if (residual.dx != 0.0 && _horizontalScrollController.hasClients) {
+      final position = _horizontalScrollController.position;
+      hTarget = (position.pixels - residual.dx)
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+    }
+    if (residual.dy != 0.0 && _verticalScrollController.hasClients) {
+      final position = _verticalScrollController.position;
+      vTarget = (position.pixels - residual.dy)
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+    }
+    _animateCanvasTo(
+      scale: nextScale,
+      offset: nextOffset,
+      hScroll: hTarget,
+      vScroll: vTarget,
+    );
+  }
+
+  Offset _viewportCenterCanvasPoint(Size desktopSize) {
+    return Offset(
+      _horizontalOffset() + desktopSize.width / 2,
+      _verticalOffset() + desktopSize.height / 2,
+    );
+  }
+
+  /// همهٔ پنجره‌ها را با یک انیمیشن در قاب دید جا می‌دهد (Fit all).
+  void _zoomToFitAllWindows(Size desktopSize, EdgeInsets padding) {
+    if (windows.isEmpty) return;
+
+    Rect? bounds;
+    for (final window in windows) {
+      bounds = bounds == null
+          ? window.rect
+          : bounds.expandToInclude(window.rect);
+    }
+    if (bounds == null || bounds.width <= 0 || bounds.height <= 0) return;
+
+    final double viewportWidth =
+        desktopSize.width - padding.left - padding.right;
+    final double viewportHeight =
+        desktopSize.height - padding.top - padding.bottom;
+    if (viewportWidth <= 0 || viewportHeight <= 0) return;
+
+    const double fitMargin = 48.0;
+    final double availableWidth = math.max(viewportWidth - fitMargin * 2, 100);
+    final double availableHeight = math.max(
+      viewportHeight - fitMargin * 2,
+      100,
+    );
+    double scale = math.min(
+      availableWidth / bounds.width,
+      availableHeight / bounds.height,
+    );
+    if (!scale.isFinite) scale = 1.0;
+    // بیشتر از ۱۰۰٪ بزرگ نمی‌کنیم تا با یکی دو پنجره منظره عجیب نشود.
+    scale = scale.clamp(_minBackgroundScale, 1.0).toDouble();
+
+    // فقط از پایین کلمپ می‌کنیم؛ سقف اسکرول با تغییر مقیاس در فریم‌های بعدی
+    // خودش رشد می‌کند و کلمپ با سقفِ قبل از انیمیشن، مقصد را خراب می‌کند.
+    final double hScroll = math.max(
+      0.0,
+      (bounds.center.dx * scale) - (padding.left + viewportWidth / 2),
+    );
+    final double vScroll = math.max(
+      0.0,
+      (bounds.center.dy * scale) - (padding.top + viewportHeight / 2),
+    );
+
+    _animateCanvasTo(
+      scale: scale,
+      offset: Offset.zero,
+      hScroll: hScroll,
+      vScroll: vScroll,
+    );
+  }
+
+  bool get _isZoomModifierPressed {
+    final HardwareKeyboard keyboard = HardwareKeyboard.instance;
+    return keyboard.isControlPressed || keyboard.isMetaPressed;
+  }
+
+  void _onBackgroundScaleStart(ScaleStartDetails details) {
+    _stopZoomAnimation();
+    _gestureStartBackgroundScale = _backgroundScale;
+    _lastGlobalFocalPoint = details.focalPoint;
+    final Offset focalInViewport = _toCanvasViewportLocal(details.focalPoint);
+    _gestureSceneFocalPoint =
+        (focalInViewport - _backgroundOffset) / _backgroundScale;
+  }
+
+  void _onBackgroundScaleUpdate(ScaleUpdateDetails details, Size canvasSize) {
+    final bool isPinchGesture =
+        details.pointerCount == 0 || details.pointerCount > 1;
+    if (!isPinchGesture) {
+      final Offset globalDelta = details.focalPoint - _lastGlobalFocalPoint;
+      _lastGlobalFocalPoint = details.focalPoint;
+      // وقتی پنِ دکمهٔ وسط فعال است، لایهٔ سراسری خودش پن می‌کند؛
+      // اینجا هم پن کنیم سرعت دوبرابر می‌شود.
+      if (_middlePanPointer == -1) {
+        _panCanvasByDelta(globalDelta);
+      }
+      return;
+    }
+
+    final double nextScale = (_gestureStartBackgroundScale * details.scale)
+        .clamp(_minBackgroundScale, _maxBackgroundScale)
+        .toDouble();
+    final Offset focalInViewport = _toCanvasViewportLocal(details.focalPoint);
+
+    final Offset rawOffset =
+        focalInViewport - (_gestureSceneFocalPoint * nextScale);
+    final Offset nextOffset = _clampBackgroundOffset(
+      rawOffset,
+      canvasSize,
+      nextScale,
+    );
+    final Offset residual = rawOffset - nextOffset;
+
+    if (nextScale == _backgroundScale &&
+        nextOffset == _backgroundOffset &&
+        residual == Offset.zero) {
+      return;
+    }
 
     setState(() {
       _backgroundScale = nextScale;
       _backgroundOffset = nextOffset;
     });
+
+    if (residual != Offset.zero) {
+      _panCanvasByDelta(residual);
+    }
+  }
+
+  void _onBackgroundPointerSignal(PointerSignalEvent event, Size canvasSize) {
+    if (event is! PointerScrollEvent) return;
+    if (event.scrollDelta.dy == 0) return;
+    // با Ctrl/Cmd، لایهٔ سراسری زوم را مدیریت می‌کند؛ دوبار زوم نکنیم.
+    if (_isZoomModifierPressed) return;
+
+    final double zoomFactor = math.exp(-event.scrollDelta.dy * 0.0015);
+    final Offset focalInViewport = _toCanvasViewportLocal(event.position);
+    _zoomBackgroundAtViewportPoint(focalInViewport, canvasSize, zoomFactor);
+  }
+
+  void _zoomBackgroundAtViewportPoint(
+    Offset viewportPoint,
+    Size canvasSize,
+    double zoomFactor,
+  ) {
+    _stopZoomAnimation();
+    final double nextScale = (_backgroundScale * zoomFactor)
+        .clamp(_minBackgroundScale, _maxBackgroundScale)
+        .toDouble();
+    if ((nextScale - _backgroundScale).abs() < 0.0001) return;
+
+    final Offset scenePoint =
+        (viewportPoint - _backgroundOffset) / _backgroundScale;
+    final Offset rawOffset = viewportPoint - (scenePoint * nextScale);
+    final Offset nextOffset = _clampBackgroundOffset(
+      rawOffset,
+      canvasSize,
+      nextScale,
+    );
+    // آنچه کلمپِ offset جا انداخته باید به اسکرول منتقل شود؛ وگرنه نقطهٔ
+    // زیر نشانگر ثابت نمی‌ماند و بعد از زوم پنل، زوم موس می‌پرد.
+    final Offset residual = rawOffset - nextOffset;
+
+    setState(() {
+      _backgroundScale = nextScale;
+      _backgroundOffset = nextOffset;
+    });
+
+    if (residual != Offset.zero) {
+      _panCanvasByDelta(residual);
+    }
   }
 
   void _onBackgroundDoubleTapDown(TapDownDetails details, Size canvasSize) {
@@ -1041,7 +1259,13 @@ class _GridDesktopState extends State<GridDesktop>
       if (window.completer != null && !window.completer!.isCompleted) {
         window.completer!.complete(result);
       }
-      setState(() => windows.removeAt(index));
+      setState(() {
+        windows.removeAt(index);
+        // اگر پنجرهٔ فوکوس‌شده بسته شد، بالاترین پنجرهٔ باقی‌مانده فوکوس بگیرد.
+        if (window.isFocused && windows.isNotEmpty) {
+          windows.last.isFocused = true;
+        }
+      });
     }
   }
 
@@ -1051,7 +1275,9 @@ class _GridDesktopState extends State<GridDesktop>
       setState(() {
         final window = windows.removeAt(index);
         window.isFocused = true;
-        for (var w in windows) w.isFocused = false;
+        for (var w in windows) {
+          w.isFocused = false;
+        }
         windows.add(window);
       });
     }
@@ -1117,8 +1343,13 @@ class _GridDesktopState extends State<GridDesktop>
       _beginWindowDragGesture(id);
     }
 
+    // دلتاهای درگ در مختصات جهان‌اند؛ آستانه و سرعت باید در مقیاس صفحه
+    // سنجیده شوند تا رفتار در هر زومی یکسان بماند.
+    final double screenScale = _backgroundScale <= 0 ? 1.0 : _backgroundScale;
+    final Offset screenDelta = details.delta * screenScale;
+
     if (!_dragIntentConfirmed) {
-      _dragIntentTravel += details.delta.distance;
+      _dragIntentTravel += screenDelta.distance;
       if (_dragIntentTravel < _dragIntentActivationDistance) {
         return;
       }
@@ -1130,7 +1361,7 @@ class _GridDesktopState extends State<GridDesktop>
     _activeDragPadding = padding;
     _lastConfirmedDragDelta = details.delta;
     _ensureEdgeAutoScrollLoop();
-    _recordDragVelocity(details.delta);
+    _recordDragVelocity(screenDelta);
 
     final index = windows.indexWhere((w) => w.id == id);
     if (index == -1) return;
@@ -1347,30 +1578,17 @@ class _GridDesktopState extends State<GridDesktop>
                                         ),
                                       ),
                                     ),
-                                  Positioned(
-                                    top: padding.top + 50,
-                                    left: 30,
-                                    child: Column(
-                                      children: widget.apps.map((app) {
-                                        return Padding(
-                                          padding: const EdgeInsets.only(
-                                            bottom: 30,
-                                          ),
-                                          child: AppIconLauncher(
-                                            label: app.title,
-                                            color: app.color,
-                                            onTap: () => openApp(app),
-                                          ),
-                                        );
-                                      }).toList(),
-                                    ),
-                                  ),
                                   Positioned.fill(
                                     child: IgnorePointer(
-                                      child: CustomPaint(
-                                        painter: ConnectionsPainter(
-                                          windows,
-                                          _lineAnimationController,
+                                      // RepaintBoundary: انیمیشن دائمی خطوط
+                                      // اتصال نباید هر فریم همهٔ پنجره‌ها را
+                                      // دوباره رندر کند.
+                                      child: RepaintBoundary(
+                                        child: CustomPaint(
+                                          painter: ConnectionsPainter(
+                                            windows,
+                                            _lineAnimationController,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -1384,6 +1602,8 @@ class _GridDesktopState extends State<GridDesktop>
                                           : window.rect,
                                       desktopSize: desktopSize,
                                       padding: padding,
+                                      chromeStyle: widget.chromeStyle,
+                                      canvasScale: _backgroundScale,
                                       onFocus: () => focusWindow(window.id),
                                       onClose: () => closeWindow(window.id),
                                       onMaximize: () => toggleMaximize(
@@ -1438,6 +1658,139 @@ class _GridDesktopState extends State<GridDesktop>
                     ),
                   ),
                 ),
+                // لانچر اپ‌ها: مثل داک به «صفحه» سنجاق است نه به بومِ اسکرول‌شونده؛
+                // وگرنه با آفست اولیهٔ بوم هیچ‌وقت دیده نمی‌شد.
+                if (!blockBackgroundInput && widget.apps.isNotEmpty)
+                  Positioned(
+                    top: padding.top + 24,
+                    left: 16,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: widget.apps.map((app) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 18),
+                          child: AppIconLauncher(
+                            label: app.title,
+                            color: app.color,
+                            onTap: () => openApp(app),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                // لایهٔ سراسری: زوم با Ctrl/Cmd+اسکرول و پن با دکمهٔ وسط موس،
+                // حتی وقتی نشانگر روی پنجره‌هاست (مثل Figma).
+                if (!blockBackgroundInput)
+                  Positioned.fill(
+                    child: MouseRegion(
+                      opaque: false,
+                      hitTestBehavior: HitTestBehavior.translucent,
+                      cursor: _isPanningCanvas
+                          ? SystemMouseCursors.grabbing
+                          : MouseCursor.defer,
+                      child: Listener(
+                        behavior: HitTestBehavior.translucent,
+                        onPointerSignal: (event) {
+                          if (event is PointerScaleEvent) {
+                            GestureBinding.instance.pointerSignalResolver
+                                .register(event, (resolved) {
+                                  final scaleEvent =
+                                      resolved as PointerScaleEvent;
+                                  _zoomBackgroundAtViewportPoint(
+                                    _toCanvasViewportLocal(scaleEvent.position),
+                                    canvasSize,
+                                    scaleEvent.scale,
+                                  );
+                                });
+                            return;
+                          }
+                          if (event is! PointerScrollEvent) return;
+                          if (!_isZoomModifierPressed) return;
+                          GestureBinding.instance.pointerSignalResolver
+                              .register(event, (resolved) {
+                                final scrollEvent =
+                                    resolved as PointerScrollEvent;
+                                if (scrollEvent.scrollDelta.dy == 0) return;
+                                final double zoomFactor = math.exp(
+                                  -scrollEvent.scrollDelta.dy * 0.0015,
+                                );
+                                _zoomBackgroundAtViewportPoint(
+                                  _toCanvasViewportLocal(scrollEvent.position),
+                                  canvasSize,
+                                  zoomFactor,
+                                );
+                              });
+                        },
+                        onPointerDown: (event) {
+                          if (event.kind == PointerDeviceKind.mouse &&
+                              (event.buttons & kMiddleMouseButton) != 0) {
+                            _stopZoomAnimation();
+                            setState(() {
+                              _middlePanPointer = event.pointer;
+                              _isPanningCanvas = true;
+                            });
+                          }
+                        },
+                        onPointerMove: (event) {
+                          if (event.pointer != _middlePanPointer) return;
+                          // اگر دکمهٔ وسط وسطِ درگ رها شده باشد، پن را قطع کن
+                          // (حالت چند-دکمه‌ای: up فقط برای آخرین دکمه می‌آید).
+                          if ((event.buttons & kMiddleMouseButton) == 0) {
+                            setState(() {
+                              _middlePanPointer = -1;
+                              _isPanningCanvas = false;
+                            });
+                            return;
+                          }
+                          _panCanvasByDelta(event.delta);
+                        },
+                        onPointerUp: (event) {
+                          if (event.pointer == _middlePanPointer) {
+                            setState(() {
+                              _middlePanPointer = -1;
+                              _isPanningCanvas = false;
+                            });
+                          }
+                        },
+                        onPointerCancel: (event) {
+                          if (event.pointer == _middlePanPointer) {
+                            setState(() {
+                              _middlePanPointer = -1;
+                              _isPanningCanvas = false;
+                            });
+                          }
+                        },
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
+                  ),
+                // پنل زوم: −/٪/+ و Fit all
+                if (!isMobile && !blockBackgroundInput)
+                  Positioned(
+                    right: 16,
+                    bottom: 26,
+                    child: _ZoomHud(
+                      scalePercent: (_backgroundScale * 100).round(),
+                      onZoomOut: () => _animatedZoomAtViewportPoint(
+                        _viewportCenterCanvasPoint(desktopSize),
+                        canvasSize,
+                        0.8,
+                      ),
+                      onZoomIn: () => _animatedZoomAtViewportPoint(
+                        _viewportCenterCanvasPoint(desktopSize),
+                        canvasSize,
+                        1.25,
+                      ),
+                      onResetZoom: () => _animatedZoomAtViewportPoint(
+                        _viewportCenterCanvasPoint(desktopSize),
+                        canvasSize,
+                        1.0 / _backgroundScale,
+                      ),
+                      onFitAll: windows.isEmpty
+                          ? null
+                          : () => _zoomToFitAllWindows(desktopSize, padding),
+                    ),
+                  ),
               ],
             );
           },
@@ -1447,7 +1800,7 @@ class _GridDesktopState extends State<GridDesktop>
   }
 }
 
-class AppIconLauncher extends StatelessWidget {
+class AppIconLauncher extends StatefulWidget {
   final String label;
   final Color color;
   final VoidCallback onTap;
@@ -1460,13 +1813,31 @@ class AppIconLauncher extends StatelessWidget {
   });
 
   @override
+  State<AppIconLauncher> createState() => _AppIconLauncherState();
+}
+
+class _AppIconLauncherState extends State<AppIconLauncher> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Text(
-            label,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 100),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: _hovered
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            widget.label,
             style: const TextStyle(
               color: Colors.white,
               fontSize: 13,
@@ -1474,7 +1845,162 @@ class AppIconLauncher extends StatelessWidget {
               shadows: [Shadow(blurRadius: 4)],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// پنل شناور کنترل زوم (پایین-راست): −/درصد/+ و Fit all.
+class _ZoomHud extends StatelessWidget {
+  final int scalePercent;
+  final VoidCallback onZoomOut;
+  final VoidCallback onZoomIn;
+  final VoidCallback onResetZoom;
+  final VoidCallback? onFitAll;
+
+  const _ZoomHud({
+    required this.scalePercent,
+    required this.onZoomOut,
+    required this.onZoomIn,
+    required this.onResetZoom,
+    this.onFitAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xF21D232C),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0x1AFFFFFF)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+          ),
         ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _HudButton(
+            tooltip: 'Zoom out',
+            onTap: onZoomOut,
+            child: const Icon(
+              Icons.remove_rounded,
+              size: 17,
+              color: Color(0xFFCBD3DE),
+            ),
+          ),
+          _HudButton(
+            tooltip: 'Reset to 100%',
+            onTap: onResetZoom,
+            width: 52,
+            child: Text(
+              '$scalePercent%',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFFCBD3DE),
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+          _HudButton(
+            tooltip: 'Zoom in',
+            onTap: onZoomIn,
+            child: const Icon(
+              Icons.add_rounded,
+              size: 17,
+              color: Color(0xFFCBD3DE),
+            ),
+          ),
+          Container(
+            width: 1,
+            height: 18,
+            margin: const EdgeInsets.symmetric(horizontal: 5),
+            color: const Color(0x14FFFFFF),
+          ),
+          _HudButton(
+            tooltip: 'Fit all windows',
+            onTap: onFitAll,
+            child: Icon(
+              Icons.fit_screen,
+              size: 17,
+              color: onFitAll == null
+                  ? const Color(0x55CBD3DE)
+                  : const Color(0xFFCBD3DE),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HudButton extends StatefulWidget {
+  final String tooltip;
+  final VoidCallback? onTap;
+  final double width;
+  final Widget child;
+
+  const _HudButton({
+    required this.tooltip,
+    required this.onTap,
+    required this.child,
+    this.width = 28,
+  });
+
+  @override
+  State<_HudButton> createState() => _HudButtonState();
+}
+
+class _HudButtonState extends State<_HudButton> {
+  bool _hovered = false;
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool enabled = widget.onTap != null;
+    Color background = Colors.transparent;
+    if (enabled && _pressed) {
+      background = Colors.white.withValues(alpha: 0.05);
+    } else if (enabled && _hovered) {
+      background = Colors.white.withValues(alpha: 0.09);
+    }
+
+    return Tooltip(
+      message: widget.tooltip,
+      waitDuration: const Duration(milliseconds: 500),
+      child: MouseRegion(
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() {
+          _hovered = false;
+          _pressed = false;
+        }),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (_) => setState(() => _pressed = true),
+          onTapUp: (_) => setState(() => _pressed = false),
+          onTapCancel: () => setState(() => _pressed = false),
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 80),
+            width: widget.width,
+            height: 28,
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: Center(child: widget.child),
+          ),
+        ),
       ),
     );
   }
