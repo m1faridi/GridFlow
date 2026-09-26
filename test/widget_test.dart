@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -32,11 +31,6 @@ void main() {
   testWidgets('Android uses macOS controls and a compact minimized card', (
     WidgetTester tester,
   ) async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.android;
-    addTearDown(() => debugDefaultTargetPlatformOverride = null);
-    final semantics = tester.ensureSemantics();
-    addTearDown(semantics.dispose);
-
     await tester.pumpWidget(
       MaterialApp(
         home: GridDesktop(
@@ -73,5 +67,5 @@ void main() {
     await tester.tap(minimizedCard);
     await tester.pump();
     expect(minimizedCard, findsNothing);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 }

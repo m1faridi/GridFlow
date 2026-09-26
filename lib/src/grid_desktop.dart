@@ -10,6 +10,7 @@ import 'window_chrome.dart';
 import 'window_widget.dart';
 
 abstract class DesktopController {
+  /// Completes with the close result, or null when the desktop is disposed.
   Future<dynamic> openApp(DesktopApp app, {String? parentId});
   void closeWindow(String id, [dynamic result]);
 }
@@ -60,7 +61,8 @@ class DesktopProvider extends InheritedWidget {
   }
 
   @override
-  bool updateShouldNotify(DesktopProvider oldWidget) => false;
+  bool updateShouldNotify(DesktopProvider oldWidget) =>
+      controller != oldWidget.controller;
 }
 
 class GridDesktop extends StatefulWidget {
@@ -89,7 +91,7 @@ class GridDesktop extends StatefulWidget {
 }
 
 class _GridDesktopState extends State<GridDesktop>
-    with TickerProviderStateMixin
+    with SingleTickerProviderStateMixin
     implements DesktopController {
   static const double _defaultWindowWidth = 500;
   static const double _defaultWindowHeight = 760;
@@ -135,9 +137,8 @@ class _GridDesktopState extends State<GridDesktop>
   Offset _lastGlobalFocalPoint = Offset.zero;
 
   List<WindowItem> windows = [];
+  int _nextWindowId = 0;
   bool _didSetInitialCanvasOffset = false;
-
-  late AnimationController _lineAnimationController;
 
   // زوم نرم (دکمه‌های پنل زوم و Fit all)
   late AnimationController _zoomAnimationController;
@@ -163,11 +164,6 @@ class _GridDesktopState extends State<GridDesktop>
       _horizontalScrollController,
       _verticalScrollController,
     ]);
-    _lineAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat();
-
     _zoomAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 240),
@@ -205,8 +201,14 @@ class _GridDesktopState extends State<GridDesktop>
     _stopEdgeAutoScrollLoop();
     _horizontalScrollController.dispose();
     _verticalScrollController.dispose();
-    _lineAnimationController.dispose();
     _zoomAnimationController.dispose();
+    for (final window in windows) {
+      final completer = window.completer;
+      if (completer != null && !completer.isCompleted) {
+        completer.complete(null);
+      }
+    }
+    windows.clear();
     super.dispose();
   }
 
@@ -330,15 +332,11 @@ class _GridDesktopState extends State<GridDesktop>
       : 0;
 
   void _beginWindowDragGesture(String id) {
+    _stopEdgeAutoScrollLoop();
     _dragIntentWindowId = id;
     _dragIntentConfirmed = false;
     _dragIntentTravel = 0.0;
     _lastConfirmedDragDelta = Offset.zero;
-    _activeDragWindowId = null;
-    _activeDragScreenSize = null;
-    _activeDragPadding = null;
-    _edgeDragVelocity = Offset.zero;
-    _edgeDragLastSampleAt = null;
   }
 
   void _panCanvasByDelta(Offset delta) {
@@ -472,9 +470,9 @@ class _GridDesktopState extends State<GridDesktop>
         current.sign == target.sign && target.abs() > current.abs();
     final double maxDelta =
         (accelerating
-                ? _edgeAutoScrollAcceleration
-                : _edgeAutoScrollDeceleration) *
-            dtSeconds;
+            ? _edgeAutoScrollAcceleration
+            : _edgeAutoScrollDeceleration) *
+        dtSeconds;
 
     if (delta.abs() <= maxDelta) {
       return target;
@@ -498,14 +496,18 @@ class _GridDesktopState extends State<GridDesktop>
     );
   }
 
-  void _stopEdgeAutoScrollLoop() {
+  void _pauseEdgeAutoScrollLoop() {
     _edgeAutoScrollTimer?.cancel();
     _edgeAutoScrollTimer = null;
+    _edgeAutoScrollVelocity = Offset.zero;
+    _edgeAutoScrollLastTickAt = null;
+  }
+
+  void _stopEdgeAutoScrollLoop() {
+    _pauseEdgeAutoScrollLoop();
     _activeDragWindowId = null;
     _activeDragScreenSize = null;
     _activeDragPadding = null;
-    _edgeAutoScrollVelocity = Offset.zero;
-    _edgeAutoScrollLastTickAt = null;
     _edgeDragVelocity = Offset.zero;
     _edgeDragLastSampleAt = null;
   }
@@ -516,10 +518,10 @@ class _GridDesktopState extends State<GridDesktop>
     _edgeDragLastSampleAt = now;
     if (lastSampleAt == null) return;
 
-    final double dtSeconds = (now.difference(lastSampleAt).inMicroseconds /
-            1000000)
-        .clamp(1 / 240, 1 / 20)
-        .toDouble();
+    final double dtSeconds =
+        (now.difference(lastSampleAt).inMicroseconds / 1000000)
+            .clamp(1 / 240, 1 / 20)
+            .toDouble();
     final Offset sampleVelocity = Offset(
       delta.dx / dtSeconds,
       delta.dy / dtSeconds,
@@ -544,7 +546,9 @@ class _GridDesktopState extends State<GridDesktop>
         (now.difference(lastSampleAt).inMicroseconds / 1000000)
             .clamp(0.0, 2.0)
             .toDouble();
-    final double decay = math.exp(-idleSeconds * _edgeDragVelocityDecayPerSecond);
+    final double decay = math.exp(
+      -idleSeconds * _edgeDragVelocityDecayPerSecond,
+    );
     final Offset decayedVelocity = Offset(
       _edgeDragVelocity.dx * decay,
       _edgeDragVelocity.dy * decay,
@@ -558,10 +562,11 @@ class _GridDesktopState extends State<GridDesktop>
       (decayedVelocity.dx * targetDirection.dx) +
           (decayedVelocity.dy * targetDirection.dy),
     );
-    final double normalized = ((projectedForwardSpeed - _edgeDragSpeedMin) /
-            (_edgeDragSpeedMax - _edgeDragSpeedMin))
-        .clamp(0.0, 1.0)
-        .toDouble();
+    final double normalized =
+        ((projectedForwardSpeed - _edgeDragSpeedMin) /
+                (_edgeDragSpeedMax - _edgeDragSpeedMin))
+            .clamp(0.0, 1.0)
+            .toDouble();
     return 1.0 + (normalized * _edgeDragInfluenceMax);
   }
 
@@ -594,6 +599,7 @@ class _GridDesktopState extends State<GridDesktop>
     final Size? screenSize = _activeDragScreenSize;
     final EdgeInsets? padding = _activeDragPadding;
     if (id == null || screenSize == null || padding == null) {
+      _stopEdgeAutoScrollLoop();
       return;
     }
 
@@ -604,7 +610,10 @@ class _GridDesktopState extends State<GridDesktop>
     }
 
     final WindowItem window = windows[index];
-    if (window.isMaximized) return;
+    if (window.isMaximized) {
+      _stopEdgeAutoScrollLoop();
+      return;
+    }
 
     final DateTime now = DateTime.now();
     final DateTime? previousTickAt = _edgeAutoScrollLastTickAt;
@@ -645,6 +654,7 @@ class _GridDesktopState extends State<GridDesktop>
 
     if (_isNearZeroVelocity(targetAutoScroll) &&
         _isNearZeroVelocity(_edgeAutoScrollVelocity)) {
+      _pauseEdgeAutoScrollLoop();
       return;
     }
 
@@ -654,7 +664,10 @@ class _GridDesktopState extends State<GridDesktop>
         _edgeAutoScrollVelocity.dy * dtSeconds,
       ),
     );
-    if (_isNearZeroDelta(autoScroll)) return;
+    if (_isNearZeroDelta(autoScroll)) {
+      _pauseEdgeAutoScrollLoop();
+      return;
+    }
 
     final double scale = _backgroundScale <= 0 ? 1.0 : _backgroundScale;
     final Offset autoWorldDelta = Offset(
@@ -730,18 +743,22 @@ class _GridDesktopState extends State<GridDesktop>
 
     if (_horizontalScrollController.hasClients) {
       final position = _horizontalScrollController.position;
-      final double target = lerpDouble(_zoomAnimStartH, _zoomAnimTargetH, t)!
-          .clamp(position.minScrollExtent, position.maxScrollExtent)
-          .toDouble();
+      final double target = lerpDouble(
+        _zoomAnimStartH,
+        _zoomAnimTargetH,
+        t,
+      )!.clamp(position.minScrollExtent, position.maxScrollExtent).toDouble();
       if ((target - position.pixels).abs() > 0.1) {
         _horizontalScrollController.jumpTo(target);
       }
     }
     if (_verticalScrollController.hasClients) {
       final position = _verticalScrollController.position;
-      final double target = lerpDouble(_zoomAnimStartV, _zoomAnimTargetV, t)!
-          .clamp(position.minScrollExtent, position.maxScrollExtent)
-          .toDouble();
+      final double target = lerpDouble(
+        _zoomAnimStartV,
+        _zoomAnimTargetV,
+        t,
+      )!.clamp(position.minScrollExtent, position.maxScrollExtent).toDouble();
       if ((target - position.pixels).abs() > 0.1) {
         _verticalScrollController.jumpTo(target);
       }
@@ -1096,6 +1113,7 @@ class _GridDesktopState extends State<GridDesktop>
     bool isClosable = true,
     bool appHasTitleBar = true,
   }) {
+    if (!mounted) return Future<dynamic>.value(null);
     final completer = Completer<dynamic>();
     Rect? openedRect;
     bool openedAsMaximized = false;
@@ -1109,7 +1127,7 @@ class _GridDesktopState extends State<GridDesktop>
         offsetX: _horizontalOffset(),
         offsetY: _verticalOffset(),
       );
-      final String newId = DateTime.now().toIso8601String();
+      final String newId = 'window-${_nextWindowId++}';
 
       final bool finalHasTitleBar = widget.hasTitleBar && appHasTitleBar;
 
@@ -1253,8 +1271,10 @@ class _GridDesktopState extends State<GridDesktop>
 
   @override
   void closeWindow(String id, [dynamic result]) {
+    if (!mounted) return;
     final index = windows.indexWhere((w) => w.id == id);
     if (index != -1) {
+      if (_activeDragWindowId == id) _stopEdgeAutoScrollLoop();
       final window = windows[index];
       if (window.completer != null && !window.completer!.isCompleted) {
         window.completer!.complete(result);
@@ -1271,6 +1291,12 @@ class _GridDesktopState extends State<GridDesktop>
 
   void focusWindow(String id) {
     final index = windows.indexWhere((w) => w.id == id);
+    if (index == windows.length - 1 &&
+        index >= 0 &&
+        windows[index].isFocused &&
+        !windows.take(index).any((window) => window.isFocused)) {
+      return;
+    }
     if (index != -1) {
       setState(() {
         final window = windows.removeAt(index);
@@ -1286,6 +1312,7 @@ class _GridDesktopState extends State<GridDesktop>
   void toggleMaximize(String id, Size screenSize, EdgeInsets padding) {
     final index = windows.indexWhere((w) => w.id == id);
     if (index == -1) return;
+    if (_activeDragWindowId == id) _stopEdgeAutoScrollLoop();
     final safeRect = _getSafeRect(
       screenSize,
       padding,
@@ -1316,6 +1343,7 @@ class _GridDesktopState extends State<GridDesktop>
   void toggleMinimize(String id) {
     final index = windows.indexWhere((w) => w.id == id);
     if (index == -1) return;
+    if (_activeDragWindowId == id) _stopEdgeAutoScrollLoop();
     setState(() {
       final window = windows[index];
       if (window.isMinimized) {
@@ -1365,11 +1393,13 @@ class _GridDesktopState extends State<GridDesktop>
     _activeDragScreenSize = screenSize;
     _activeDragPadding = padding;
     _lastConfirmedDragDelta = details.delta;
-    _ensureEdgeAutoScrollLoop();
     _recordDragVelocity(screenDelta);
 
     final index = windows.indexWhere((w) => w.id == id);
-    if (index == -1) return;
+    if (index == -1) {
+      _stopEdgeAutoScrollLoop();
+      return;
+    }
     final window = windows[index];
     final bool isMobile = screenSize.width < 700;
 
@@ -1393,6 +1423,17 @@ class _GridDesktopState extends State<GridDesktop>
       if (!isMobile) {
         _rebaseWorldIfNeeded();
       }
+      final target = _applyDragDirectionGate(
+        _computeEdgeAutoScrollForWindow(window.rect, screenSize, padding),
+      );
+      if (!_isNearZeroVelocity(target) ||
+          !_isNearZeroVelocity(_edgeAutoScrollVelocity)) {
+        _ensureEdgeAutoScrollLoop();
+      } else {
+        _pauseEdgeAutoScrollLoop();
+      }
+    } else {
+      _stopEdgeAutoScrollLoop();
     }
   }
 
@@ -1464,10 +1505,8 @@ class _GridDesktopState extends State<GridDesktop>
                           : null,
                       builder: (context, backgroundChild) {
                         final Offset worldTranslation = Offset(
-                          _backgroundOffset.dx -
-                              (_horizontalOffset() * _backgroundScale),
-                          _backgroundOffset.dy -
-                              (_verticalOffset() * _backgroundScale),
+                          _backgroundOffset.dx - _horizontalOffset(),
+                          _backgroundOffset.dy - _verticalOffset(),
                         );
 
                         if (widget.background != null) {
@@ -1499,6 +1538,17 @@ class _GridDesktopState extends State<GridDesktop>
                         );
                       },
                     ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: _ConnectionsLayer(
+                    windows: windows,
+                    horizontalController: _horizontalScrollController,
+                    verticalController: _verticalScrollController,
+                    viewportSize: desktopSize,
+                    scale: _backgroundScale,
+                    offset: _backgroundOffset,
+                    enabled: !blockBackgroundInput,
                   ),
                 ),
                 RawScrollbar(
@@ -1583,21 +1633,6 @@ class _GridDesktopState extends State<GridDesktop>
                                         ),
                                       ),
                                     ),
-                                  Positioned.fill(
-                                    child: IgnorePointer(
-                                      // RepaintBoundary: انیمیشن دائمی خطوط
-                                      // اتصال نباید هر فریم همهٔ پنجره‌ها را
-                                      // دوباره رندر کند.
-                                      child: RepaintBoundary(
-                                        child: CustomPaint(
-                                          painter: ConnectionsPainter(
-                                            windows,
-                                            _lineAnimationController,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
                                   ...windows.map((window) {
                                     return FastWindow(
                                       key: ValueKey(window.id),
@@ -1799,6 +1834,110 @@ class _GridDesktopState extends State<GridDesktop>
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+/// Keeps the animated layer viewport-sized, independently of the world canvas.
+class _ConnectionsLayer extends StatefulWidget {
+  final List<WindowItem> windows;
+  final ScrollController horizontalController;
+  final ScrollController verticalController;
+  final Size viewportSize;
+  final double scale;
+  final Offset offset;
+  final bool enabled;
+
+  const _ConnectionsLayer({
+    required this.windows,
+    required this.horizontalController,
+    required this.verticalController,
+    required this.viewportSize,
+    required this.scale,
+    required this.offset,
+    required this.enabled,
+  });
+
+  @override
+  State<_ConnectionsLayer> createState() => _ConnectionsLayerState();
+}
+
+class _ConnectionsLayerState extends State<_ConnectionsLayer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _animation;
+  ConnectionsPainter? _painter;
+
+  @override
+  void initState() {
+    super.initState();
+    _animation = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    );
+    widget.horizontalController.addListener(_onScroll);
+    widget.verticalController.addListener(_onScroll);
+    _updatePainter();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ConnectionsLayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.horizontalController != widget.horizontalController) {
+      oldWidget.horizontalController.removeListener(_onScroll);
+      widget.horizontalController.addListener(_onScroll);
+    }
+    if (oldWidget.verticalController != widget.verticalController) {
+      oldWidget.verticalController.removeListener(_onScroll);
+      widget.verticalController.addListener(_onScroll);
+    }
+    _updatePainter();
+  }
+
+  void _onScroll() => setState(_updatePainter);
+
+  void _updatePainter() {
+    final horizontal = widget.horizontalController.hasClients
+        ? widget.horizontalController.offset
+        : 0.0;
+    final vertical = widget.verticalController.hasClients
+        ? widget.verticalController.offset
+        : 0.0;
+    final viewport = Rect.fromLTWH(
+      (horizontal - widget.offset.dx) / widget.scale,
+      (vertical - widget.offset.dy) / widget.scale,
+      widget.viewportSize.width / widget.scale,
+      widget.viewportSize.height / widget.scale,
+    );
+    _painter = ConnectionsPainter(
+      widget.windows,
+      _animation,
+      viewport: viewport,
+      scale: widget.scale,
+      previousPainter: _painter,
+    );
+    if (widget.enabled && _painter!.hasVisibleConnections) {
+      if (!_animation.isAnimating) _animation.repeat();
+    } else {
+      _animation.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.horizontalController.removeListener(_onScroll);
+    widget.verticalController.removeListener(_onScroll);
+    _animation.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: RepaintBoundary(
+        child: ClipRect(
+          child: CustomPaint(painter: widget.enabled ? _painter : null),
         ),
       ),
     );

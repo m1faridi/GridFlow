@@ -188,7 +188,10 @@ class FastWindow extends StatelessWidget {
     // محتوای پنجره را با WindowScope wrap می‌کنیم تا داخل محتوا WindowScope.of(context) کار کند.
     final Widget scopedContent = WindowScope(
       windowId: window.id,
-      child: window.content,
+      // Keep expensive app content independent of the animated window chrome.
+      // The outer boundary isolates this window from its siblings, but cannot
+      // prevent focus/shadow animations inside it from repainting the content.
+      child: RepaintBoundary(child: window.content),
     );
 
     return TransformableBox(

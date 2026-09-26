@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui'; // برای استفاده از ImageFilter
 import 'package:flutter/material.dart';
 import 'models.dart';
@@ -17,8 +18,8 @@ class SnapPreviewOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Rect target;
-    final w = screenSize.width - padding.left - padding.right;
-    final h = screenSize.height - padding.top - padding.bottom;
+    final w = math.max(0.0, screenSize.width - padding.horizontal);
+    final h = math.max(0.0, screenSize.height - padding.vertical);
     final startX = padding.left;
     final startY = padding.top;
     final hw = w / 2, hh = h / 2, tw = w / 3;
@@ -43,8 +44,8 @@ class SnapPreviewOverlay extends StatelessWidget {
       curve: Curves.easeOutQuad,
       left: target.left,
       top: target.top,
-      width: target.width,
-      height: target.height,
+      width: math.max(0.0, target.width),
+      height: math.max(0.0, target.height),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: BackdropFilter(
