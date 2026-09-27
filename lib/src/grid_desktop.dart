@@ -1840,7 +1840,7 @@ class _GridDesktopState extends State<GridDesktop>
   }
 }
 
-/// Keeps the animated layer viewport-sized, independently of the world canvas.
+/// Keeps the connection layer viewport-sized, independently of the world canvas.
 class _ConnectionsLayer extends StatefulWidget {
   final List<WindowItem> windows;
   final ScrollController horizontalController;
@@ -1864,18 +1864,12 @@ class _ConnectionsLayer extends StatefulWidget {
   State<_ConnectionsLayer> createState() => _ConnectionsLayerState();
 }
 
-class _ConnectionsLayerState extends State<_ConnectionsLayer>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _animation;
+class _ConnectionsLayerState extends State<_ConnectionsLayer> {
   ConnectionsPainter? _painter;
 
   @override
   void initState() {
     super.initState();
-    _animation = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    );
     widget.horizontalController.addListener(_onScroll);
     widget.verticalController.addListener(_onScroll);
     _updatePainter();
@@ -1912,23 +1906,16 @@ class _ConnectionsLayerState extends State<_ConnectionsLayer>
     );
     _painter = ConnectionsPainter(
       widget.windows,
-      _animation,
       viewport: viewport,
       scale: widget.scale,
       previousPainter: _painter,
     );
-    if (widget.enabled && _painter!.hasVisibleConnections) {
-      if (!_animation.isAnimating) _animation.repeat();
-    } else {
-      _animation.stop();
-    }
   }
 
   @override
   void dispose() {
     widget.horizontalController.removeListener(_onScroll);
     widget.verticalController.removeListener(_onScroll);
-    _animation.dispose();
     super.dispose();
   }
 

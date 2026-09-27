@@ -94,7 +94,6 @@ typedef _ConnectionWindow = ({String id, String tag, Rect rect, Color color});
 
 class ConnectionsPainter extends CustomPainter {
   final List<WindowItem> windows;
-  final Animation<double> animation;
 
   /// The visible world rectangle, painted into the local viewport at [scale].
   /// Without a viewport, paths retain their original world coordinates.
@@ -105,8 +104,7 @@ class ConnectionsPainter extends CustomPainter {
   late final List<_VisibleConnection> _visibleConnections = _findVisiblePaths();
 
   ConnectionsPainter(
-    this.windows,
-    this.animation, {
+    this.windows, {
     this.viewport,
     this.scale = 1,
     ConnectionsPainter? previousPainter,
@@ -121,8 +119,7 @@ class ConnectionsPainter extends CustomPainter {
                rect: window.rect,
                color: window.themeColor,
              ),
-       ],
-       super(repaint: animation) {
+       ] {
     // WindowItem is mutable: retain values rather than the model references so
     // moving a window invalidates the cache even when the list is unchanged.
     _connections =
@@ -265,43 +262,16 @@ class ConnectionsPainter extends CustomPainter {
       canvas.scale(_effectiveScale);
       canvas.translate(-viewport.left, -viewport.top);
     }
-    final value = animation.value;
-    final phase = value.isFinite ? (value % 1) * 20 : 0.0;
     for (final visible in _visibleConnections) {
       final connection = visible.connection;
       canvas.drawPath(connection.path, connection.glowPaint);
-      _drawAnimatedDashedLine(canvas, visible, phase);
+      canvas.drawPath(visible.dashes, connection.dashPaint);
       canvas.drawCircle(connection.start, 4, _ConnectionPath.anchorPaint);
       canvas.drawCircle(connection.start, 2, connection.startPaint);
       canvas.drawCircle(connection.end, 4, _ConnectionPath.anchorPaint);
       canvas.drawCircle(connection.end, 2, connection.endPaint);
     }
     canvas.restore();
-  }
-
-  void _drawAnimatedDashedLine(
-    Canvas canvas,
-    _VisibleConnection visible,
-    double phase,
-  ) {
-    final connection = visible.connection;
-    final metric = connection.metric!;
-    const dashWidth = 10.0;
-    const dashPeriod = 20.0;
-    var offset =
-        ((visible.start + phase) / dashPeriod).floor() * dashPeriod - phase;
-    // One paint and one draw operation per connection, rather than a Paint and
-    // canvas draw for every dash. Extracted fragments never leave the viewport.
-    final dashes = Path();
-    while (offset < visible.end) {
-      final start = max(offset, visible.start);
-      final end = min(offset + dashWidth, visible.end);
-      if (end > start) {
-        dashes.addPath(metric.extractPath(start, end), Offset.zero);
-      }
-      offset += dashPeriod;
-    }
-    canvas.drawPath(dashes, connection.dashPaint);
   }
 
   ({Offset start, Offset end}) _getSmartAnchors(Rect from, Rect to) {
@@ -320,7 +290,6 @@ class ConnectionsPainter extends CustomPainter {
   bool shouldRepaint(covariant ConnectionsPainter oldDelegate) {
     return viewport != oldDelegate.viewport ||
         _effectiveScale != oldDelegate._effectiveScale ||
-        animation != oldDelegate.animation ||
         !listEquals(_windowSnapshots, oldDelegate._windowSnapshots);
   }
 }
@@ -363,5 +332,25 @@ class _VisibleConnection {
   final double start;
   final double end;
 
-  const _VisibleConnection(this.connection, this.start, this.end);
+  // Static dashes are calculated once for each visible section, then reused.
+  late final Path dashes = _buildDashes();
+
+  _VisibleConnection(this.connection, this.start, this.end);
+
+  Path _buildDashes() {
+    final metric = connection.metric!;
+    const dashWidth = 10.0;
+    const dashPeriod = 20.0;
+    var offset = (start / dashPeriod).floor() * dashPeriod;
+    final path = Path();
+    while (offset < end) {
+      final dashStart = max(offset, start);
+      final dashEnd = min(offset + dashWidth, end);
+      if (dashEnd > dashStart) {
+        path.addPath(metric.extractPath(dashStart, dashEnd), Offset.zero);
+      }
+      offset += dashPeriod;
+    }
+    return path;
+  }
 }
