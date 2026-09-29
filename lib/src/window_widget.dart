@@ -244,19 +244,9 @@ class FastWindow extends StatelessWidget {
         }
       },
       contentBuilder: (context, rect, flip) {
-        // --- بخش ۱: حالت مینیمایز ---
-        if (window.isMinimized) {
-          return _MinimizedWindowCard(
-            window: window,
-            onFocus: onFocus,
-            onRestore: onMinimize,
-            onDragStart: onDragStart,
-            onDragUpdate: onDragUpdate,
-            onDragEnd: onDragEnd,
-          );
-        }
-
-        // --- بخش ۲: بدنه پنجره ---
+        final expandedSize = window.isMinimized
+            ? (window.preMinRect?.size ?? const Size(500, 400))
+            : rect.size;
         final Widget windowBody = Material(
           color: Colors.transparent,
           child: AnimatedContainer(
@@ -282,7 +272,7 @@ class FastWindow extends StatelessWidget {
             clipBehavior: Clip.hardEdge,
             child: window.hasTitleBar
                 ? _buildWithTitleBar(scopedContent)
-                : _buildWithoutTitleBar(scopedContent),
+                : scopedContent,
           ),
         );
 
@@ -299,7 +289,42 @@ class FastWindow extends StatelessWidget {
           },
           // RepaintBoundary: جابجایی یا انیمیشن پنجره‌های دیگر باعث
           // رندر دوباره این پنجره نمی‌شود.
-          child: RepaintBoundary(child: windowBody),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Positioned.fill(
+                child: TickerMode(
+                  enabled: !window.isMinimized,
+                  child: ExcludeFocus(
+                    excluding: window.isMinimized,
+                    child: Offstage(
+                      offstage: window.isMinimized,
+                      child: OverflowBox(
+                        // Keep the expanded subtree mounted at its original
+                        // size: forms, scroll positions and app state survive.
+                        minWidth: expandedSize.width,
+                        maxWidth: expandedSize.width,
+                        minHeight: expandedSize.height,
+                        maxHeight: expandedSize.height,
+                        child: RepaintBoundary(child: windowBody),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              if (window.isMinimized)
+                Positioned.fill(
+                  child: _MinimizedWindowCard(
+                    window: window,
+                    onFocus: onFocus,
+                    onRestore: onMinimize,
+                    onDragStart: onDragStart,
+                    onDragUpdate: onDragUpdate,
+                    onDragEnd: onDragEnd,
+                  ),
+                ),
+            ],
+          ),
         );
       },
     );
@@ -355,13 +380,11 @@ class FastWindow extends StatelessWidget {
                   child: Center(child: titleText),
                 ),
               ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: captionControls,
-              ),
+              Align(alignment: Alignment.centerRight, child: captionControls),
             ],
           )
         : Row(
+            textDirection: TextDirection.ltr,
             children: [
               const SizedBox(width: 12),
               Expanded(child: titleText),
@@ -381,6 +404,7 @@ class FastWindow extends StatelessWidget {
           },
           onPanUpdate: onDragUpdate,
           onPanEnd: (_) => onDragEnd(),
+          onPanCancel: onDragEnd,
           child: Container(
             height: toolbarHeight,
             decoration: BoxDecoration(
@@ -393,43 +417,7 @@ class FastWindow extends StatelessWidget {
             child: titleBarContent,
           ),
         ),
-        Expanded(
-          child: AbsorbPointer(
-            absorbing: !window.isFocused,
-            child: scopedContent,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildWithoutTitleBar(Widget scopedContent) {
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: AbsorbPointer(
-            absorbing: !window.isFocused,
-            child: scopedContent,
-          ),
-        ),
-
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          height: 30,
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onDoubleTap: onMaximize,
-            onPanStart: (_) {
-              onFocus();
-              onDragStart();
-            },
-            onPanUpdate: onDragUpdate,
-            onPanEnd: (_) => onDragEnd(),
-            child: Container(color: Colors.transparent),
-          ),
-        ),
+        Expanded(child: scopedContent),
       ],
     );
   }

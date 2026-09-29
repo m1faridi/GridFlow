@@ -14,12 +14,23 @@ class DesktopApp {
   final String? connectionTag;
   final bool isClosable;
 
+  /// The builder registered with GridNativeWindows.initialize for this app.
+  /// Required for custom content when native windows are enabled.
+  final String? nativeId;
+
+  /// JSON-serializable initial data for the independent Flutter engine.
+  final Map<String, dynamic> nativeArguments;
+  final Size nativeWindowSize;
+
   DesktopApp({
     required this.title,
     Color? color,
     this.contentBuilder,
     this.connectionTag,
     this.isClosable = true,
+    this.nativeId,
+    this.nativeArguments = const {},
+    this.nativeWindowSize = const Size(900, 700),
   }) : color = color ?? (connectionTag != null ? _generateColorFromTag(connectionTag) : Colors.blueGrey);
 
   static Color _generateColorFromTag(String tag) {
@@ -44,6 +55,7 @@ class WindowItem {
   bool isFocused;
   bool isMaximized;
   bool isMinimized;
+  bool wasMaximizedBeforeMinimize = false;
   final String? connectionTag;
   bool isClosable;
   bool hasTitleBar;

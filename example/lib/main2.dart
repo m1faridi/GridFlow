@@ -136,6 +136,7 @@ class _MyApp2State extends State<MyApp2> {
         title: childTitle,
         color: childColor,
         connectionTag: 'group_1',
+        nativeId: 'demo',
         contentBuilder: (_) => const MyApp2(),
       ),
       parentId: 'group_1',

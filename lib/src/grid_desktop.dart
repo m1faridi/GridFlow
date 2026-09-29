@@ -3,73 +3,30 @@ import 'dart:math' as math;
 import 'dart:ui' show FontFeature, lerpDouble;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'desktop_controller.dart';
+import 'native_windows.dart';
 import 'models.dart';
 import 'painters.dart';
 import 'window_chrome.dart';
 import 'window_widget.dart';
 
-abstract class DesktopController {
-  /// Completes with the close result, or null when the desktop is disposed.
-  Future<dynamic> openApp(DesktopApp app, {String? parentId});
-  void closeWindow(String id, [dynamic result]);
-}
-
-/// یک Handle که هم state را دارد هم context مربوط به caller.
-/// نتیجه: DesktopProvider.of(context)?.closeApp(true) دقیقاً مثل Navigator.pop(result)
-class DesktopHandle {
-  final DesktopController _controller;
-  final BuildContext _ctx;
-
-  DesktopHandle._(this._controller, this._ctx);
-
-  Future<dynamic> openApp(DesktopApp app, {String? parentId}) {
-    return _controller.openApp(app, parentId: parentId);
-  }
-
-  void closeApp(dynamic result) {
-    final id = WindowScope.of(_ctx);
-    if (id == null) {
-      // اگر اینجا null است یعنی محتوای پنجره زیر WindowScope نیست
-      // یا context مربوط به دسکتاپ نیست.
-      debugPrint('[DesktopProvider] closeApp failed: WindowScope is null');
-      return;
-    }
-    _controller.closeWindow(id, result);
-  }
-
-  // اگر جایی هنوز close با id لازم داشتی:
-  void closeById(String id, [dynamic result]) =>
-      _controller.closeWindow(id, result);
-}
-
-/// Provider اصلی
-class DesktopProvider extends InheritedWidget {
-  final DesktopController controller;
-
-  const DesktopProvider({
-    super.key,
-    required this.controller,
-    required super.child,
-  });
-
-  static DesktopHandle? of(BuildContext context) {
-    final provider = context
-        .dependOnInheritedWidgetOfExactType<DesktopProvider>();
-    if (provider == null) return null;
-    return DesktopHandle._(provider.controller, context);
-  }
-
-  @override
-  bool updateShouldNotify(DesktopProvider oldWidget) =>
-      controller != oldWidget.controller;
-}
+export 'desktop_controller.dart';
 
 class GridDesktop extends StatefulWidget {
   final List<DesktopApp> apps;
   final Widget? background;
   final List<DesktopApp>? autoStartApps;
   final bool isWindowMode;
+
+  /// Opens new apps in OS windows on macOS and Windows. Call
+  /// GridNativeWindows.initialize in main first. Other platforms use the canvas.
+  /// Changing this flag affects future opens, not existing windows.
+  final bool useNativeWindows;
+
+  /// Shows the window drag handle and controls. When false, the entire window
+  /// belongs to its app; no invisible drag region covers the app's toolbar.
   final bool hasTitleBar;
 
   /// سبک دکمه‌های کنترل پنجره؛ اگر null باشد از پلتفرم تشخیص داده می‌شود
@@ -82,6 +39,7 @@ class GridDesktop extends StatefulWidget {
     this.background,
     this.autoStartApps,
     this.isWindowMode = false,
+    this.useNativeWindows = false,
     this.hasTitleBar = true,
     this.chromeStyle,
   });
@@ -91,7 +49,7 @@ class GridDesktop extends StatefulWidget {
 }
 
 class _GridDesktopState extends State<GridDesktop>
-    with SingleTickerProviderStateMixin
+    with TickerProviderStateMixin
     implements DesktopController {
   static const double _defaultWindowWidth = 500;
   static const double _defaultWindowHeight = 760;
@@ -111,22 +69,19 @@ class _GridDesktopState extends State<GridDesktop>
   static const double _edgeDragSpeedMin = 220.0;
   static const double _edgeDragSpeedMax = 2200.0;
   static const double _edgeDragInfluenceMax = 1.2;
-  static const double _dragIntentActivationDistance = 10.0;
 
   late final ScrollController _horizontalScrollController;
   late final ScrollController _verticalScrollController;
   late final Listenable _backgroundMotionListenable;
   final GlobalKey _canvasViewportKey = GlobalKey();
-  Timer? _edgeAutoScrollTimer;
+  late final Ticker _edgeAutoScrollTicker;
   String? _activeDragWindowId;
   Size? _activeDragScreenSize;
   EdgeInsets? _activeDragPadding;
   String? _dragIntentWindowId;
-  bool _dragIntentConfirmed = false;
-  double _dragIntentTravel = 0.0;
   Offset _lastConfirmedDragDelta = Offset.zero;
   Offset _edgeAutoScrollVelocity = Offset.zero;
-  DateTime? _edgeAutoScrollLastTickAt;
+  Duration? _edgeAutoScrollLastTickAt;
   Offset _edgeDragVelocity = Offset.zero;
   DateTime? _edgeDragLastSampleAt;
 
@@ -158,6 +113,7 @@ class _GridDesktopState extends State<GridDesktop>
   @override
   void initState() {
     super.initState();
+    _edgeAutoScrollTicker = createTicker(_tickEdgeAutoScroll);
     _horizontalScrollController = ScrollController();
     _verticalScrollController = ScrollController();
     _backgroundMotionListenable = Listenable.merge([
@@ -177,7 +133,7 @@ class _GridDesktopState extends State<GridDesktop>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         for (var app in widget.autoStartApps!) {
-          openApp(app);
+          _openAppFromLauncher(app);
         }
       });
     }
@@ -199,6 +155,7 @@ class _GridDesktopState extends State<GridDesktop>
   @override
   void dispose() {
     _stopEdgeAutoScrollLoop();
+    _edgeAutoScrollTicker.dispose();
     _horizontalScrollController.dispose();
     _verticalScrollController.dispose();
     _zoomAnimationController.dispose();
@@ -333,9 +290,8 @@ class _GridDesktopState extends State<GridDesktop>
 
   void _beginWindowDragGesture(String id) {
     _stopEdgeAutoScrollLoop();
+    _stopZoomAnimation();
     _dragIntentWindowId = id;
-    _dragIntentConfirmed = false;
-    _dragIntentTravel = 0.0;
     _lastConfirmedDragDelta = Offset.zero;
   }
 
@@ -406,18 +362,24 @@ class _GridDesktopState extends State<GridDesktop>
         visibleBottom - _edgeAutoScrollActivationEpsilon;
     final double triggerTop = visibleTop + _edgeAutoScrollActivationEpsilon;
 
-    if (windowViewportRect.right >= triggerRight) {
+    // Choose the edge in the drag direction first. A large window can cross
+    // both edges at once; checking bottom/right first loses upward/left drags.
+    if (_lastConfirmedDragDelta.dx > 0 &&
+        windowViewportRect.right >= triggerRight) {
       final double overlap = windowViewportRect.right - triggerRight;
       desiredDx = _edgeScrollSpeedFromOverlap(overlap);
-    } else if (windowViewportRect.left <= triggerLeft) {
+    } else if (_lastConfirmedDragDelta.dx < 0 &&
+        windowViewportRect.left <= triggerLeft) {
       final double overlap = triggerLeft - windowViewportRect.left;
       desiredDx = -_edgeScrollSpeedFromOverlap(overlap);
     }
 
-    if (windowViewportRect.bottom >= triggerBottom) {
+    if (_lastConfirmedDragDelta.dy > 0 &&
+        windowViewportRect.bottom >= triggerBottom) {
       final double overlap = windowViewportRect.bottom - triggerBottom;
       desiredDy = _edgeScrollSpeedFromOverlap(overlap);
-    } else if (windowViewportRect.top <= triggerTop) {
+    } else if (_lastConfirmedDragDelta.dy < 0 &&
+        windowViewportRect.top <= triggerTop) {
       final double overlap = triggerTop - windowViewportRect.top;
       desiredDy = -_edgeScrollSpeedFromOverlap(overlap);
     }
@@ -489,16 +451,11 @@ class _GridDesktopState extends State<GridDesktop>
   }
 
   void _ensureEdgeAutoScrollLoop() {
-    _edgeAutoScrollLastTickAt ??= DateTime.now();
-    _edgeAutoScrollTimer ??= Timer.periodic(
-      const Duration(milliseconds: 16),
-      (_) => _tickEdgeAutoScroll(),
-    );
+    if (!_edgeAutoScrollTicker.isActive) _edgeAutoScrollTicker.start();
   }
 
   void _pauseEdgeAutoScrollLoop() {
-    _edgeAutoScrollTimer?.cancel();
-    _edgeAutoScrollTimer = null;
+    _edgeAutoScrollTicker.stop();
     _edgeAutoScrollVelocity = Offset.zero;
     _edgeAutoScrollLastTickAt = null;
   }
@@ -589,7 +546,7 @@ class _GridDesktopState extends State<GridDesktop>
     );
   }
 
-  void _tickEdgeAutoScroll() {
+  void _tickEdgeAutoScroll(Duration elapsed) {
     if (!mounted) {
       _stopEdgeAutoScrollLoop();
       return;
@@ -616,14 +573,15 @@ class _GridDesktopState extends State<GridDesktop>
     }
 
     final DateTime now = DateTime.now();
-    final DateTime? previousTickAt = _edgeAutoScrollLastTickAt;
-    _edgeAutoScrollLastTickAt = now;
+    final Duration? previousTickAt = _edgeAutoScrollLastTickAt;
+    _edgeAutoScrollLastTickAt = elapsed;
     final double dtSeconds =
         (previousTickAt == null
-                ? (1 / 60)
-                : now.difference(previousTickAt).inMicroseconds / 1000000)
-            .clamp(1 / 120, 1 / 20)
+                ? 1 / 60
+                : (elapsed - previousTickAt).inMicroseconds / 1000000)
+            .clamp(0.0, 1 / 20)
             .toDouble();
+    if (dtSeconds == 0) return;
 
     final bool isMobile = screenSize.width < 700;
     final Offset edgeTargetAutoScroll = _computeEdgeAutoScrollForWindow(
@@ -1094,6 +1052,10 @@ class _GridDesktopState extends State<GridDesktop>
 
   @override
   Future<dynamic> openApp(DesktopApp app, {String? parentId}) {
+    if (!mounted) return Future<dynamic>.value(null);
+    if (widget.useNativeWindows && GridNativeWindows.isSupported) {
+      return GridNativeWindows.openApp(app, parentId: parentId);
+    }
     return _internalOpenWindow(
       app.title,
       app.color,
@@ -1102,6 +1064,24 @@ class _GridDesktopState extends State<GridDesktop>
       connectionTag: app.connectionTag,
       isClosable: app.isClosable,
     );
+  }
+
+  Future<void> _openAppFromLauncher(DesktopApp app) async {
+    try {
+      await openApp(app);
+    } catch (error, stack) {
+      FlutterError.reportError(FlutterErrorDetails(
+        exception: error,
+        stack: stack,
+        library: 'grid_flow',
+        context: ErrorDescription('opening ${app.title}'),
+      ));
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          const SnackBar(content: Text('Could not open this window.')),
+        );
+      }
+    }
   }
 
   Future<dynamic> _internalOpenWindow(
@@ -1273,6 +1253,10 @@ class _GridDesktopState extends State<GridDesktop>
   void closeWindow(String id, [dynamic result]) {
     if (!mounted) return;
     final index = windows.indexWhere((w) => w.id == id);
+    if (index == -1 && GridNativeWindows.ownsWindow(id)) {
+      GridNativeWindows.closeWindow(id, result);
+      return;
+    }
     if (index != -1) {
       if (_activeDragWindowId == id) _stopEdgeAutoScrollLoop();
       final window = windows[index];
@@ -1351,9 +1335,11 @@ class _GridDesktopState extends State<GridDesktop>
             window.preMinRect ??
             Rect.fromLTWH(100, 100, _defaultWindowWidth, _defaultWindowHeight);
         window.isMinimized = false;
+        window.isMaximized = window.wasMaximizedBeforeMinimize;
         focusWindow(id);
       } else {
         window.preMinRect = window.rect;
+        window.wasMaximizedBeforeMinimize = window.isMaximized;
         window.isMinimized = true;
         window.isMaximized = false;
         window.rect = Rect.fromLTWH(
@@ -1376,19 +1362,13 @@ class _GridDesktopState extends State<GridDesktop>
       _beginWindowDragGesture(id);
     }
 
-    // دلتاهای درگ در مختصات جهان‌اند؛ آستانه و سرعت باید در مقیاس صفحه
+    // دلتاهای درگ در مختصات جهان‌اند؛ سرعت باید در مقیاس صفحه
     // سنجیده شوند تا رفتار در هر زومی یکسان بماند.
     final double screenScale = _backgroundScale <= 0 ? 1.0 : _backgroundScale;
     final Offset screenDelta = details.delta * screenScale;
 
-    if (!_dragIntentConfirmed) {
-      _dragIntentTravel += screenDelta.distance;
-      if (_dragIntentTravel < _dragIntentActivationDistance) {
-        return;
-      }
-      _dragIntentConfirmed = true;
-    }
-
+    // GestureDetector has already accepted the drag. A second threshold here
+    // drops small deltas and makes the window lag behind the pointer.
     _activeDragWindowId = id;
     _activeDragScreenSize = screenSize;
     _activeDragPadding = padding;
@@ -1416,9 +1396,11 @@ class _GridDesktopState extends State<GridDesktop>
         nextRect = _fitRectInsideSafeRect(nextRect, safeAfterScroll);
       }
 
-      setState(() {
-        window.rect = nextRect;
-      });
+      if (!_rectNearlyEquals(nextRect, window.rect)) {
+        setState(() {
+          window.rect = nextRect;
+        });
+      }
 
       if (!isMobile) {
         _rebaseWorldIfNeeded();
@@ -1439,8 +1421,6 @@ class _GridDesktopState extends State<GridDesktop>
 
   void onWindowDragEnd(String id, Size screenSize, EdgeInsets padding) {
     _dragIntentWindowId = null;
-    _dragIntentConfirmed = false;
-    _dragIntentTravel = 0.0;
     _lastConfirmedDragDelta = Offset.zero;
     _stopEdgeAutoScrollLoop();
   }
@@ -1712,7 +1692,7 @@ class _GridDesktopState extends State<GridDesktop>
                           child: AppIconLauncher(
                             label: app.title,
                             color: app.color,
-                            onTap: () => openApp(app),
+                            onTap: () => _openAppFromLauncher(app),
                           ),
                         );
                       }).toList(),
