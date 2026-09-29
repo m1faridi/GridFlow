@@ -235,13 +235,15 @@ class _NativeRuntime with WindowListener implements DesktopController {
         WindowConfiguration(arguments: encoded, hiddenAtLaunch: true),
       );
       pending.windowId = window.windowId;
-      // A child can close before create() returns; reconcile that race too.
-      await _refreshWindows();
     } catch (error, stack) {
       if (_pending.remove(requestId) != null && !pending.result.isCompleted) {
         pending.result.completeError(error, stack);
       }
+      return;
     }
+    // A child can close before create() returns; reconcile that race too.
+    // A temporary listing failure must not discard a successfully opened app.
+    await _refreshWindows().catchError(_reportNativeError);
   }
 
   Future<dynamic> _handleCall(MethodCall call) async {
@@ -313,6 +315,11 @@ class _NativeRuntime with WindowListener implements DesktopController {
     } else {
       unawaited(_closeLauncher().catchError(_reportNativeError));
     }
+  }
+
+  @override
+  void onWindowFocus() {
+    if (launch == null) _launcherHidden = false;
   }
 
   Future<void> _closeLauncher() async {
