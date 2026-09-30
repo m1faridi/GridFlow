@@ -4,8 +4,8 @@ import 'package:grid_flow/grid_os.dart';
 
 import 'main2.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+void main() {
+  GridNativeWindows.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,

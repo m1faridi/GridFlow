@@ -1,11 +1,10 @@
 # GridFlow example
 
-Use Flutter main with its experimental Desktop Windowing API enabled. The
-project targets revision `4d8bbcef965`; see the [root README](../README.md) for SDK
-setup and native runner migration.
+Use the existing Flutter 3.47.5 stable SDK. GridFlow initializes the bundled
+experimental windowing API at runtime; no SDK upgrade or channel change is
+needed. See the [root README](../README.md) for bootstrap and runner details.
 
 ```sh
-flutter config --enable-windowing
 flutter pub get
 flutter run -d macos
 # Or: flutter run -d windows
@@ -16,8 +15,8 @@ opens in a real OS window, sharing the same Flutter engine and Dart state.
 The toggle affects future opens. Existing canvas windows keep their state.
 Closing the launcher leaves independent windows running until the last closes.
 
-The macOS and Windows runners require the experimental flag even when the
-switch is off. Mobile and web keep using the canvas.
+The bootstrap initializes windowing for the launcher even when the switch is
+off. Mobile and web keep using the canvas.
 
 ## Verification
 

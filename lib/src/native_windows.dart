@@ -1,5 +1,5 @@
 // Flutter's experimental windowing API is intentionally isolated in this file.
-// Targets Flutter main (4d8bbcef965); internal names may change between SDK releases.
+// Targets Flutter 3.47.5 stable; internal names may change between SDK releases.
 // ignore_for_file: implementation_imports, invalid_use_of_internal_member
 
 import 'dart:async';
@@ -44,18 +44,39 @@ class GridNativeWindows {
 
   static _NativeRuntime? _runtime;
 
-  /// Whether this build enables windowing on a supported desktop platform.
-  static bool get isSupported =>
+  static bool get _isDesktop =>
       !kIsWeb &&
-      isWindowingEnabled &&
       (defaultTargetPlatform == TargetPlatform.macOS ||
           defaultTargetPlatform == TargetPlatform.windows ||
           defaultTargetPlatform == TargetPlatform.linux);
 
+  /// Whether Flutter windowing is initialized on a desktop platform.
+  static bool get isSupported => _isDesktop && isWindowingEnabled;
+
+  /// Initializes the experimental API bundled with Flutter 3.47.5 stable.
+  ///
+  /// That SDK's CLI ignores enable-windowing on stable. Opt in here and replace
+  /// the unsupported owner installed by an earlier ensureInitialized call.
+  /// This changes only this application's runtime, not the SDK or its channel.
+  /// Call this before runWidget when using [GridNativeWindowHost] directly.
+  static WidgetsBinding ensureInitialized() {
+    final binding = WidgetsFlutterBinding.ensureInitialized();
+    if (_isDesktop && !isWindowingEnabled) {
+      isWindowingEnabled = true;
+      try {
+        binding.windowingOwner = windowing.createDefaultWindowingOwner();
+      } catch (_) {
+        isWindowingEnabled = false;
+        rethrow;
+      }
+    }
+    return binding;
+  }
+
   /// Runs the launcher and its independent windows in one widget tree.
   ///
-  /// On mobile/web, or builds without windowing, uses Flutter's normal runApp.
-  /// Desktop runners without an implicit view require the windowing flag.
+  /// Enables the bundled experimental API on desktop. On mobile/web, uses
+  /// Flutter's normal runApp.
   /// To share inherited state, instead call runWidget with providers above a
   /// [GridNativeWindowHost]. Providers inside [launcher] belong to that view.
   static void run(
@@ -65,12 +86,12 @@ class GridNativeWindows {
     Map<String, NativeWindowBuilder> builders = const {},
     Widget Function(Widget child)? appBuilder,
   }) {
-    WidgetsFlutterBinding.ensureInitialized();
+    ensureInitialized();
     if (!isSupported) {
       if (WidgetsBinding.instance.platformDispatcher.implicitView == null) {
         throw StateError(
-          'This desktop runner requires Flutter windowing. Use the main '
-          'channel with flutter config --enable-windowing, then rebuild.',
+          'No implicit view is available on this platform. Use a supported '
+          'desktop runner or provide an implicit view for runApp.',
         );
       }
       runApp(launcher);
@@ -139,9 +160,10 @@ class _GridNativeWindowHostState extends State<GridNativeWindowHost> {
   @override
   void initState() {
     super.initState();
+    GridNativeWindows.ensureInitialized();
     if (!GridNativeWindows.isSupported) {
       throw StateError(
-        'Enable Flutter windowing before mounting GridNativeWindowHost.',
+        'GridNativeWindowHost requires a supported desktop platform.',
       );
     }
     if (GridNativeWindows._runtime != null) {
@@ -182,7 +204,7 @@ class _GridNativeWindowHostState extends State<GridNativeWindowHost> {
       views: [
         for (final entry in _runtime.windows)
           if (!entry.closing)
-            windowing.Window(
+            windowing.RegularWindow(
               key: ValueKey(entry.id),
               controller: entry.controller,
               child: entry.child,
@@ -196,7 +218,7 @@ class _NativeWindow {
   final String id;
   final bool isClosable;
   final Completer<dynamic>? result;
-  late final windowing.WindowController controller;
+  late final windowing.RegularWindowController controller;
   Widget child;
   bool closing = false;
   bool destroyed = false;
@@ -206,14 +228,14 @@ class _NativeWindow {
   _NativeWindow(this.id, this.child, {this.isClosable = true, this.result});
 }
 
-class _WindowDelegate with windowing.WindowControllerDelegate {
+class _WindowDelegate with windowing.RegularWindowControllerDelegate {
   final VoidCallback onClose;
   final VoidCallback onDestroyed;
 
   _WindowDelegate({required this.onClose, required this.onDestroyed});
 
   @override
-  void onWindowCloseRequested(windowing.WindowController controller) =>
+  void onWindowCloseRequested(windowing.RegularWindowController controller) =>
       onClose();
 
   @override
@@ -244,7 +266,7 @@ class _NativeRuntime extends ChangeNotifier implements DesktopController {
 
   void _create(_NativeWindow entry, String title, Size size) {
     _validateSize(size);
-    entry.controller = windowing.WindowController(
+    entry.controller = windowing.RegularWindowController(
       title: title,
       size: size,
       constraints: const BoxConstraints(minWidth: 200, minHeight: 150),

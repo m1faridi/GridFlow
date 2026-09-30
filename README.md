@@ -77,32 +77,37 @@ flutter pub get
 
 ## Independent windows (experimental Flutter API)
 
-GridFlow uses Flutter's own `WindowController`, `Window`, `ViewCollection` and
+GridFlow uses Flutter's own `RegularWindowController`, `RegularWindow`, `ViewCollection` and
 `runWidget` APIs. All windows run in **one Flutter engine and Dart isolate**.
 This follows [Flutter's desktop windowing introduction](https://flutter.dev/blog/desktop-windowing-apis).
 
 ### SDK and setup
 
-Use Flutter **main** with windowing enabled. The integration targets revision
-`4d8bbcef965` (2026-09-28). These internal APIs can change even in patch releases;
-Flutter 3.47 stable has older API names and cannot compile this integration.
+Use the existing **Flutter 3.47.5 stable** SDK (Dart 3.13.4). No channel switch or
+SDK upgrade is needed. This version bundles the experimental API under the
+`RegularWindowController` / `RegularWindow` names. The article uses names from a
+newer main revision; this integration intentionally targets the installed SDK.
 
 ```bash
-flutter channel main
-flutter upgrade
-flutter config --enable-windowing
 cd example
 flutter pub get
 flutter run -d macos
 # Or: flutter run -d windows
 ```
 
-The example also enables `flutter.config.enable-windowing` in its pubspec.
-Use a separate main SDK if you want to keep your default SDK on stable.
-The macOS and Windows runners in this repository start a single engine without
-an implicit window; Dart creates the launcher and every subsequent window.
-They require the windowing flag even when the **Independent windows** switch is
-off, since the launcher still needs a native view.
+On this stable SDK, `flutter config --enable-windowing` and the equivalent
+pubspec setting do not enable the API. `GridNativeWindows.ensureInitialized()`
+opts in through Flutter's internal runtime flag and installs the native
+windowing owner. `GridNativeWindows.run(...)` calls it automatically, and it
+also works if `WidgetsFlutterBinding.ensureInitialized()` has already run.
+This is an experimental, application-local opt-in; it does not edit the Flutter
+SDK or global settings. Internal API compatibility with other SDK versions is
+not guaranteed.
+
+The macOS and Windows runners start a single engine without a native launcher
+window. Dart creates the launcher and every subsequent window, so initialize
+windowing even when the **Independent windows** switch is off. The bootstrap
+handles this automatically. Mobile and web continue to use the canvas.
 
 ### Bootstrap
 
@@ -142,8 +147,8 @@ An unknown explicit `nativeId` is reported as an error.
 Set `GridDesktop(useNativeWindows: true)` to open **new** apps in independent OS
 windows on macOS, Windows and Linux. The default is `false`. Changing this
 option leaves existing windows in their current mode. Mobile and web use the
-canvas; builds without the windowing flag also use the canvas when the runner
-provides an implicit view.
+canvas. A GridDesktop mounted without the native bootstrap also keeps using
+the canvas when its runner provides an implicit view.
 
 `DesktopProvider.of(context)?.openApp(...)` works in both modes. In a native
 window, further opens are native too. The returned future receives
@@ -166,7 +171,7 @@ own inherited state across views, place its scope **above** the root host:
 
 ```dart
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
+  GridNativeWindows.ensureInitialized();
   runWidget(
     MySharedProviders(
       child: GridNativeWindowHost(
@@ -179,7 +184,7 @@ void main() {
 ```
 
 `MySharedProviders` and `MyDesktop` stand for your app's widgets. This explicit
-`runWidget` form is for desktop builds with windowing enabled. Each window has
+`runWidget` form is for desktop; initialize the bundled API first as shown. Each window has
 its own MaterialApp/Navigator. Providers placed *inside* the launcher's
 MaterialApp are local to that window.
 
