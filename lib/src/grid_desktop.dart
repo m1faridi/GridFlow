@@ -20,8 +20,9 @@ class GridDesktop extends StatefulWidget {
   final List<DesktopApp>? autoStartApps;
   final bool isWindowMode;
 
-  /// Opens new apps in OS windows on macOS and Windows. Call
-  /// GridNativeWindows.initialize in main first. Other platforms use the canvas.
+  /// Opens new apps using Flutter windowing on macOS, Windows and Linux.
+  /// Bootstrap with GridNativeWindows.run. Builds without the experimental
+  /// windowing flag and non-desktop platforms use the canvas.
   /// Changing this flag affects future opens, not existing windows.
   final bool useNativeWindows;
 

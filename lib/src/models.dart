@@ -14,11 +14,11 @@ class DesktopApp {
   final String? connectionTag;
   final bool isClosable;
 
-  /// The builder registered with GridNativeWindows.initialize for this app.
-  /// Required for custom content when native windows are enabled.
+  /// Optional builder registered with GridNativeWindows.run for this app.
+  /// When omitted, contentBuilder is also used for native windows.
   final String? nativeId;
 
-  /// JSON-serializable initial data for the independent Flutter engine.
+  /// Initial data passed directly to the native builder in the same Dart isolate.
   final Map<String, dynamic> nativeArguments;
   final Size nativeWindowSize;
 

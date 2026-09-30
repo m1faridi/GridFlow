@@ -10,7 +10,7 @@
 
 A high-performance, OS-like **window management framework** for Flutter that enables **multi-window desktop experiences** inside a single application.
 
-GridFlow provides a Flutter canvas with **runtime window spawning** and **window grouping**, plus optional independent OS windows on macOS and Windows.
+GridFlow provides a Flutter canvas with **runtime window spawning** and **window grouping**, plus optional independent OS windows using Flutter’s experimental Desktop Windowing API.
 
 ---
 
@@ -75,97 +75,132 @@ Then run:
 flutter pub get
 ```
 
-## Independent macOS and Windows windows
+## Independent windows (experimental Flutter API)
 
-Set `GridDesktop(useNativeWindows: true, ...)` to open **new** apps in real OS
-windows. The default is `false`. Android, iOS, Linux and web keep using the canvas.
-Changing this option does not move existing windows between modes.
+GridFlow uses Flutter's own `WindowController`, `Window`, `ViewCollection` and
+`runWidget` APIs. All windows run in **one Flutter engine and Dart isolate**.
+This follows [Flutter's desktop windowing introduction](https://flutter.dev/blog/desktop-windowing-apis).
 
-Each native window has its own Flutter engine. Register builders in `main()` so
-every engine can reconstruct its content, and give custom apps a stable
-`nativeId`. The initialization returns a child app when running in a new window;
-run that app instead of creating another launcher:
+### SDK and setup
+
+Use Flutter **main** with windowing enabled. The integration targets revision
+`4d8bbcef965` (2026-09-28). These internal APIs can change even in patch releases;
+Flutter 3.47 stable has older API names and cannot compile this integration.
+
+```bash
+flutter channel main
+flutter upgrade
+flutter config --enable-windowing
+cd example
+flutter pub get
+flutter run -d macos
+# Or: flutter run -d windows
+```
+
+The example also enables `flutter.config.enable-windowing` in its pubspec.
+Use a separate main SDK if you want to keep your default SDK on stable.
+The macOS and Windows runners in this repository start a single engine without
+an implicit window; Dart creates the launcher and every subsequent window.
+They require the windowing flag even when the **Independent windows** switch is
+off, since the launcher still needs a native view.
+
+### Bootstrap
+
+Replace `runApp(...)` or the old `GridNativeWindows.initialize(...)` bootstrap
+with `GridNativeWindows.run(...)`:
 
 ```dart
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  final nativeApp = await GridNativeWindows.initialize(
-    builders: {
-      'editor': (launch) => Editor(documentId: launch.arguments['documentId']),
-    },
-    // Optional: set the child's theme, localization and app-level providers.
+void main() {
+  GridNativeWindows.run(
+    MaterialApp(
+      home: GridDesktop(
+        useNativeWindows: true,
+        apps: [
+          DesktopApp(
+            title: 'Editor',
+            nativeWindowSize: const Size(900, 700),
+            contentBuilder: (_) => Editor(documentId: 'document-42'),
+          ),
+        ],
+      ),
+    ),
+    title: 'My workspace',
+    // Optional: theme/localizations for each additional native window.
     appBuilder: (child) => MaterialApp(home: child),
   );
-  runApp(nativeApp ?? MaterialApp(
-    home: GridDesktop(
-      useNativeWindows: true,
-      apps: [
-        DesktopApp(
-          title: 'Editor',
-          nativeId: 'editor',
-          nativeArguments: {'documentId': 'document-42'},
-          nativeWindowSize: const Size(900, 700),
-          contentBuilder: (_) => Editor(documentId: 'document-42'),
-        ),
-      ],
+}
+```
+
+`Editor` is your application widget. The same `contentBuilder` works on the
+canvas and in native windows, including captured services and model objects.
+For a separate native presentation, optionally register `builders` in `run`
+and select one using `DesktopApp.nativeId`. That builder receives
+`NativeWindowLaunch`, including `windowId`, `parentId` and `nativeArguments`.
+Arguments and close results are ordinary Dart values and need no serialization.
+An unknown explicit `nativeId` is reported as an error.
+
+Set `GridDesktop(useNativeWindows: true)` to open **new** apps in independent OS
+windows on macOS, Windows and Linux. The default is `false`. Changing this
+option leaves existing windows in their current mode. Mobile and web use the
+canvas; builds without the windowing flag also use the canvas when the runner
+provides an implicit view.
+
+`DesktopProvider.of(context)?.openApp(...)` works in both modes. In a native
+window, further opens are native too. The returned future receives
+`closeApp(result)`; closing with the OS button returns `null`.
+`isClosable: false` ignores OS close requests; programmatic closure still works.
+The OS may still draw an enabled close button because the experimental API
+does not expose a close-button visibility/enabled setting.
+
+Removing `GridDesktop` leaves native windows alive. Closing the launcher or an
+opener also leaves its independent windows alive; the application exits when
+the last window closes. OS-level Quit exits the entire application. Removing the
+root `GridNativeWindowHost` releases all windows and completes pending results.
+Native title bars, resizing, minimizing and maximizing belong to the OS.
+Canvas snapping, connection lines and zoom only apply to embedded windows.
+
+### Shared inherited state
+
+Captured objects are shared directly. To share Provider, Riverpod, Bloc or your
+own inherited state across views, place its scope **above** the root host:
+
+```dart
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runWidget(
+    MySharedProviders(
+      child: GridNativeWindowHost(
+        launcher: MaterialApp(home: MyDesktop()),
+        appBuilder: (child) => MaterialApp(home: child),
+      ),
     ),
-  ));
+  );
 }
 ```
 
-`Editor` is your app widget. `contentBuilder` supplies the canvas version;
-the registered native builder supplies the independent version. Apps without
-custom content can omit `nativeId` and use the default title-only view.
-Initial arguments must be JSON-serializable. Providers, in-memory objects and
-captured closures from the launcher are not shared; initialize services in every
-engine or synchronize data through your application's storage/IPC layer.
-Separate engines use more memory; this mode does not promise lower total CPU use.
+`MySharedProviders` and `MyDesktop` stand for your app's widgets. This explicit
+`runWidget` form is for desktop builds with windowing enabled. Each window has
+its own MaterialApp/Navigator. Providers placed *inside* the launcher's
+MaterialApp are local to that window.
 
-`DesktopProvider.of(context)?.openApp(...)` works inside both types of windows.
-Inside a native window, further opens are native too. Its returned future receives
-the value passed to `closeApp(result)`; closing with the OS button returns `null`.
-Results must be supported by Flutter's standard method codec (for example strings,
-numbers, lists and maps). `isClosable: false` disables the OS close action;
-programmatic `closeApp` can still finish the window.
+### Native runner migration
 
-Removing the `GridDesktop` widget leaves native windows alive. Closing the main
-OS window hides its launcher while other windows are open, then closes it when
-the last child closes. OS-level **Quit** still exits the whole application.
-Native controls, resizing, minimizing and maximizing are provided by the OS;
-canvas snapping, linking lines and canvas zoom apply to embedded windows only.
+The old per-window plugin callbacks are removed. Apps consuming GridFlow must
+also update their runners, not just their Dart entrypoint:
 
-### Register plugins in each native window
+- **macOS:** retain a `FlutterEngine` in `AppDelegate`, run it, and register
+  plugins once with that engine. Remove the `MainFlutterWindow` object and its
+  outlet from `MainMenu.xib`. See the runnable example's
+  [`AppDelegate.swift`](example/macos/Runner/AppDelegate.swift).
+- **Windows:** create and run one `flutter::FlutterEngine`, register plugins,
+  and keep the message loop. Run the UI isolate on the platform thread.
+  See [`main.cpp`](example/windows/runner/main.cpp).
+- **Linux:** run the UI isolate on the platform thread. The root repository's
+  runner retains its original hidden view to own the engine; only Dart-created
+  windows render frames. The example does not yet include a Linux runner.
 
-The repository's runners and runnable example already include this setup.
-Applications consuming GridFlow must also add the following callbacks. A full
-rebuild is required after adding plugins; hot reload is insufficient.
-
-In `macos/Runner/MainFlutterWindow.swift`, import `desktop_multi_window` and add
-this immediately after the existing `RegisterGeneratedPlugins` call:
-
-```swift
-FlutterMultiWindowPlugin.setOnWindowCreatedCallback { controller in
-  RegisterGeneratedPlugins(registry: controller)
-}
-```
-
-In `windows/runner/flutter_window.cpp`, add
-`#include "desktop_multi_window/desktop_multi_window_plugin.h"`, then add this
-immediately after the existing `RegisterPlugins` call in `OnCreate()`:
-
-```cpp
-DesktopMultiWindowSetWindowCreatedCallback([](void* controller) {
-  auto* view = reinterpret_cast<flutter::FlutterViewController*>(controller);
-  RegisterPlugins(view->engine());
-});
-```
-
-The implementation uses [desktop_multi_window](https://pub.dev/packages/desktop_multi_window)
-and [window_manager](https://pub.dev/packages/window_manager). Verify that any
-additional plugins in your child apps support multiple Flutter engines.
-
-Run `flutter run -d macos` or `flutter run -d windows` from `example/` and enable
-the **Native windows** switch to try it. The switch affects the next window you open.
+Rebuild fully after changing runners. No third-party window-management plugin
+or per-window engine/plugin registration is needed.
 
 ## 🚀 Quick Start
 

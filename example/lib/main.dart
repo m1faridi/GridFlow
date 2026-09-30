@@ -1,17 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:grid_flow/grid_os.dart';
+
 import 'main2.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final nativeApp = await GridNativeWindows.initialize(
-    builders: {'demo': (_) => const MyApp2()},
-  );
-  if (nativeApp != null) {
-    runApp(nativeApp);
-    return;
-  }
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -19,7 +13,7 @@ Future<void> main() async {
       systemNavigationBarColor: Colors.transparent,
     ),
   );
-  runApp(
+  GridNativeWindows.run(
     const MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Grid OS',
@@ -48,7 +42,6 @@ class _MyDesktopState extends State<MyDesktop> {
             title: 'Auto App',
             color: Colors.purple,
             isClosable: false,
-            nativeId: 'demo',
             contentBuilder: (_) => const MyApp2(),
           ),
         ],
@@ -57,7 +50,6 @@ class _MyDesktopState extends State<MyDesktop> {
             title: 'Camera Input',
             color: Colors.blue,
             connectionTag: 'group_1',
-            nativeId: 'demo',
             contentBuilder: (_) => const MyApp2(),
           ),
           DesktopApp(
@@ -94,7 +86,7 @@ class _MyDesktopState extends State<MyDesktop> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Text(
-                      'Native windows',
+                      'Independent windows',
                       style: TextStyle(color: Colors.white),
                     ),
                     const SizedBox(width: 8),

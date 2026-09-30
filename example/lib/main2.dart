@@ -136,7 +136,6 @@ class _MyApp2State extends State<MyApp2> {
         title: childTitle,
         color: childColor,
         connectionTag: 'group_1',
-        nativeId: 'demo',
         contentBuilder: (_) => const MyApp2(),
       ),
       parentId: 'group_1',
@@ -227,7 +226,7 @@ class _MyApp2State extends State<MyApp2> {
               Expanded(
                 child: ListView.separated(
                   itemCount: _entries.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
                     final item = _entries[index];
                     return Container(

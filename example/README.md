@@ -1,17 +1,36 @@
-# gridflow
+# GridFlow example
 
-A new Flutter project.
+Use Flutter main with its experimental Desktop Windowing API enabled. The
+project targets revision `4d8bbcef965`; see the [root README](../README.md) for SDK
+setup and native runner migration.
 
-## Getting Started
+```sh
+flutter config --enable-windowing
+flutter pub get
+flutter run -d macos
+# Or: flutter run -d windows
+```
 
-This project is a starting point for a Flutter application.
+Enable **Independent windows**, then open an app from the launcher. Its content
+opens in a real OS window, sharing the same Flutter engine and Dart state.
+The toggle affects future opens. Existing canvas windows keep their state.
+Closing the launcher leaves independent windows running until the last closes.
 
-A few resources to get you started if this is your first Flutter project:
+The macOS and Windows runners require the experimental flag even when the
+switch is off. Mobile and web keep using the canvas.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Verification
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```sh
+# From the repository root:
+flutter test
+flutter analyze
+# From example/:
+flutter test
+flutter build web
+flutter run -d macos -t test_driver/windowing_smoke.dart
+```
+
+The native smoke test creates two independent windows, closes their launcher,
+checks that the remaining windows survive, and verifies an in-memory result.
+It prints `WINDOWING_SMOKE_OK` and exits when the final window closes.

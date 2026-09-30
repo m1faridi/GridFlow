@@ -1,8 +1,8 @@
 #include <flutter/dart_project.h>
-#include <flutter/flutter_view_controller.h>
+#include <flutter/flutter_engine.h>
 #include <windows.h>
 
-#include "flutter_window.h"
+#include "flutter/generated_plugin_registrant.h"
 #include "utils.h"
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
@@ -24,13 +24,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
-  FlutterWindow window(project);
-  Win32Window::Point origin(10, 10);
-  Win32Window::Size size(1440, 900);
-  if (!window.Create(L"gridflow", origin, size)) {
+  // Window controllers in Dart create all views in this single engine.
+  project.set_ui_thread_policy(flutter::UIThreadPolicy::RunOnPlatformThread);
+  flutter::FlutterEngine engine(project);
+  if (!engine.Run()) {
     return EXIT_FAILURE;
   }
-  window.SetQuitOnClose(true);
+  RegisterPlugins(&engine);
 
   ::MSG msg;
   while (::GetMessage(&msg, nullptr, 0, 0)) {
