@@ -80,6 +80,8 @@ class _ProbeState extends State<_Probe> {
       _expectViews(1);
       GridNativeWindows.ensureInitialized();
       _expectViews(1);
+      // Native window creation can pump Windows messages; leave the frame first.
+      await Future<void>.delayed(Duration.zero);
       final closed = _openChild();
       await Future<void>.delayed(const Duration(milliseconds: 300));
       _expectViews(2);
