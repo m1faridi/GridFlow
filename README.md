@@ -324,3 +324,29 @@ for dialogs. Only the exact internal fallback signal is consumed; unrelated
 Flutter errors are forwarded unchanged. Direct native `DialogWindowController`
 creation is unsupported under this policy. The experimental Flutter APIs used
 here should be rechecked on SDK upgrades.
+### Windows hot restart
+
+On Flutter 3.47.5, native windows survive a Dart hot restart. In Windows debug
+sessions GridFlow now marks its own windows, reattaches the existing launcher to
+the new isolate, and retires children from the previous isolate. The launcher
+keeps its native window, position, and size; Dart application state still resets
+on hot restart. Hot reload preserves the running widget state as usual.
+
+This compatibility adapter is limited to Windows debug builds. Other platforms
+and release/profile builds continue using Flutter's normal controllers. It uses
+Flutter's experimental Windows controller API, so recheck it when upgrading the
+SDK. After first installing this fix, stop and run the app once so its windows
+receive GridFlow's ownership markers.
+
+To exercise real native windows (widget tests do not restart the Dart isolate):
+
+```sh
+cd example
+flutter run -d windows -t lib/native_restart_smoke.dart
+```
+
+The example checks initialization, child close results, reopening, and the number
+of live views. Move or resize the launcher, press `R` repeatedly with `r` between
+restarts, and check that each `GRIDFLOW_RESTART_READY` line has the same launcher
+view and exactly two live views. No old child windows should remain. Closing the
+child and launcher should exit the process normally.
