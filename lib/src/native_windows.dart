@@ -15,6 +15,8 @@ import 'package:flutter/src/widgets/_window.dart' as windowing;
 import 'desktop_controller.dart';
 import 'models.dart';
 import 'native_dialog_policy.dart';
+import 'native_window_restart_stub.dart'
+    if (dart.library.io) 'native_window_restart_windows.dart';
 import 'window_widget.dart' show WindowScope;
 
 typedef NativeWindowBuilder = Widget Function(NativeWindowLaunch launch);
@@ -75,6 +77,9 @@ class GridNativeWindows {
         isWindowingEnabled &&
         binding.windowingOwner is! GridDialogWindowingOwner) {
       binding.windowingOwner = GridDialogWindowingOwner(binding.windowingOwner);
+    }
+    if (_isDesktop && isWindowingEnabled) {
+      prepareNativeWindowRestart(binding.windowingOwner);
     }
     return binding;
   }
@@ -272,7 +277,8 @@ class _NativeRuntime extends ChangeNotifier implements DesktopController {
 
   void _create(_NativeWindow entry, String title, Size size) {
     _validateSize(size);
-    entry.controller = windowing.RegularWindowController(
+    entry.controller = createGridRegularWindow(
+      launcher: entry.id == 'grid-flow-launcher',
       title: title,
       size: size,
       constraints: const BoxConstraints(minWidth: 200, minHeight: 150),
