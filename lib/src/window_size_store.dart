@@ -32,7 +32,7 @@ class WindowSizeStore {
           value.length != 2 ||
           value[0] is! num ||
           value[1] is! num) {
-        return null;
+        return null;//
       }
       final size = Size(
         (value[0] as num).toDouble(),
