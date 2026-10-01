@@ -77,6 +77,30 @@ flutter pub get
 
 ## Independent windows (experimental Flutter API)
 
+### Window placement and remembered sizes
+
+With Independent windows enabled, native Windows windows open beside the right
+edge of the window that requests them, using its current position and width.
+Opening from the main launcher always uses that launcher, even when other
+windows are already open. `DesktopProvider` carries the caller automatically;
+direct `GridNativeWindows.openApp` calls can pass `context` or `parentId`, and
+otherwise use the native window active when the request starts.
+Each new window has a 5 logical pixel horizontal gap and starts 32 logical
+pixels lower; near a screen edge its title bar stays reachable
+without jumping to the screen's top left. Other native platforms retain their
+system placement.
+With Independent windows disabled (or unavailable), canvas windows retain their
+side-by-side layout: the first starts at the left and subsequent windows open
+18 logical pixels to the right of their parent or the focused window. The canvas
+scrolls horizontally to reveal new windows.
+
+GridFlow automatically initializes `data_save: 0.4.6` and persists each app's
+last normal window size, including across restarts. The key is `nativeId` when
+provided, otherwise `title` (for example, `activity_user`). Use distinct, stable
+names for apps that should remember different sizes. Canvas and native sizes
+are stored separately. Minimizing, maximizing and fullscreen do not overwrite
+the normal size. Restored windows are fitted to the available space.
+
 GridFlow uses Flutter's own `RegularWindowController`, `RegularWindow`, `ViewCollection` and
 `runWidget` APIs. All windows run in **one Flutter engine and Dart isolate**.
 This follows [Flutter's desktop windowing introduction](https://flutter.dev/blog/desktop-windowing-apis).

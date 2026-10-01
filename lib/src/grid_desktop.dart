@@ -1,16 +1,19 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show FontFeature, lerpDouble;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+
 import 'desktop_controller.dart';
 import 'native_windows.dart';
 import 'models.dart';
 import 'painters.dart';
 import 'window_chrome.dart';
 import 'window_widget.dart';
+import 'window_size_store.dart';
 
 export 'desktop_controller.dart';
 
@@ -93,6 +96,8 @@ class _GridDesktopState extends State<GridDesktop>
   Offset _lastGlobalFocalPoint = Offset.zero;
 
   List<WindowItem> windows = [];
+  final _windowSizes = WindowSizeStore('canvas');
+  Size? _viewportSize;
   int _nextWindowId = 0;
   bool _didSetInitialCanvasOffset = false;
 
@@ -161,12 +166,14 @@ class _GridDesktopState extends State<GridDesktop>
     _verticalScrollController.dispose();
     _zoomAnimationController.dispose();
     for (final window in windows) {
+      _rememberWindowSize(window);
       final completer = window.completer;
       if (completer != null && !completer.isCompleted) {
         completer.complete(null);
       }
     }
     windows.clear();
+    unawaited(_windowSizes.flush());
     super.dispose();
   }
 
@@ -974,88 +981,50 @@ class _GridDesktopState extends State<GridDesktop>
     return Rect.fromLTWH(fittedLeft, fittedTop, fittedWidth, fittedHeight);
   }
 
-  void _ensureWindowVisible(
-    Rect rect, {
-    bool adjustHorizontal = true,
-    bool adjustVertical = true,
-  }) {
-    if (!mounted) return;
-
-    final size = MediaQuery.of(context).size;
-    final padding = MediaQuery.of(context).padding;
-    final viewportWidth = size.width - padding.left - padding.right;
-    final viewportHeight = size.height - padding.top - padding.bottom;
-    if (viewportWidth <= 0 || viewportHeight <= 0) return;
-
-    const double margin = 24;
-    final double scale = _backgroundScale <= 0 ? 1.0 : _backgroundScale;
-    final double translateX = _backgroundOffset.dx;
-    final double translateY = _backgroundOffset.dy;
-
-    if (adjustHorizontal && _horizontalScrollController.hasClients) {
-      final position = _horizontalScrollController.position;
-      final visibleLeft = _horizontalOffset() + padding.left;
-      final visibleRight = visibleLeft + viewportWidth;
-      final double rectLeft = (rect.left * scale) + translateX;
-      final double rectRight = (rect.right * scale) + translateX;
-      double target = position.pixels;
-
-      if (rectRight + margin > visibleRight) {
-        target = rectRight + margin - padding.left - viewportWidth;
-      } else if (rectLeft - margin < visibleLeft) {
-        target = rectLeft - margin - padding.left;
-      }
-
-      final clamped = target
-          .clamp(position.minScrollExtent, position.maxScrollExtent)
-          .toDouble();
-      if (clamped != position.pixels) {
-        _horizontalScrollController.jumpTo(clamped);
-      }
-    }
-
-    if (adjustVertical && _verticalScrollController.hasClients) {
-      final position = _verticalScrollController.position;
-      final visibleTop = _verticalOffset() + padding.top;
-      final visibleBottom = visibleTop + viewportHeight;
-      final double rectTop = (rect.top * scale) + translateY;
-      final double rectBottom = (rect.bottom * scale) + translateY;
-      double target = position.pixels;
-
-      if (rectBottom + margin > visibleBottom) {
-        target = rectBottom + margin - padding.top - viewportHeight;
-      } else if (rectTop - margin < visibleTop) {
-        target = rectTop - margin - padding.top;
-      }
-
-      final clamped = target
-          .clamp(position.minScrollExtent, position.maxScrollExtent)
-          .toDouble();
-      if (clamped != position.pixels) {
-        _verticalScrollController.jumpTo(clamped);
-      }
-    }
-  }
-
   WindowItem? _findParentWindow(String parentId) {
     for (final window in windows) {
-      if (window.id == parentId) {
-        return window;
-      }
+      if (window.id == parentId) return window;
     }
     for (final window in windows.reversed) {
-      if (window.connectionTag == parentId) {
-        return window;
-      }
+      if (window.connectionTag == parentId) return window;
     }
     return null;
+  }
+
+  void _ensureWindowVisible(Rect rect) {
+    if (!mounted || !_horizontalScrollController.hasClients) return;
+    final size = _viewportSize ?? MediaQuery.of(context).size;
+    final padding = MediaQuery.of(context).padding;
+    final viewportWidth = size.width - padding.left - padding.right;
+    if (viewportWidth <= 0) return;
+    const margin = 24.0;
+    final scale = _backgroundScale <= 0 ? 1.0 : _backgroundScale;
+    final position = _horizontalScrollController.position;
+    final visibleLeft = _horizontalOffset() + padding.left;
+    final visibleRight = visibleLeft + viewportWidth;
+    final rectLeft = rect.left * scale + _backgroundOffset.dx;
+    final rectRight = rect.right * scale + _backgroundOffset.dx;
+    var target = position.pixels;
+    if (rectRight + margin > visibleRight) {
+      target = rectRight + margin - padding.left - viewportWidth;
+    } else if (rectLeft - margin < visibleLeft) {
+      target = rectLeft - margin - padding.left;
+    }
+    final clamped = target
+        .clamp(position.minScrollExtent, position.maxScrollExtent)
+        .toDouble();
+    if (clamped != position.pixels) _horizontalScrollController.jumpTo(clamped);
   }
 
   @override
   Future<dynamic> openApp(DesktopApp app, {String? parentId}) {
     if (!mounted) return Future<dynamic>.value(null);
     if (widget.useNativeWindows && GridNativeWindows.isSupported) {
-      return GridNativeWindows.openApp(app, parentId: parentId);
+      return GridNativeWindows.openApp(
+        app,
+        parentId: parentId,
+        context: context,
+      );
     }
     return _internalOpenWindow(
       app.title,
@@ -1064,6 +1033,7 @@ class _GridDesktopState extends State<GridDesktop>
       customBodyBuilder: app.contentBuilder,
       connectionTag: app.connectionTag,
       isClosable: app.isClosable,
+      sizeStorageKey: app.nativeId ?? app.title,
     );
   }
 
@@ -1071,12 +1041,14 @@ class _GridDesktopState extends State<GridDesktop>
     try {
       await openApp(app);
     } catch (error, stack) {
-      FlutterError.reportError(FlutterErrorDetails(
-        exception: error,
-        stack: stack,
-        library: 'grid_flow',
-        context: ErrorDescription('opening ${app.title}'),
-      ));
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'grid_flow',
+          context: ErrorDescription('opening ${app.title}'),
+        ),
+      );
       if (mounted) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
           const SnackBar(content: Text('Could not open this window.')),
@@ -1093,14 +1065,16 @@ class _GridDesktopState extends State<GridDesktop>
     String? connectionTag,
     bool isClosable = true,
     bool appHasTitleBar = true,
-  }) {
+    String? sizeStorageKey,
+  }) async {
+    final storageKey = sizeStorageKey ?? title;
+    final rememberedSize = await _windowSizes.read(storageKey);
     if (!mounted) return Future<dynamic>.value(null);
     final completer = Completer<dynamic>();
-    Rect? openedRect;
-    bool openedAsMaximized = false;
+    Rect? revealRect;
 
     setState(() {
-      final size = MediaQuery.of(context).size;
+      final size = _viewportSize ?? MediaQuery.of(context).size;
       final padding = MediaQuery.of(context).padding;
       final safeRect = _getSafeRect(
         size,
@@ -1113,44 +1087,31 @@ class _GridDesktopState extends State<GridDesktop>
       final bool finalHasTitleBar = widget.hasTitleBar && appHasTitleBar;
 
       final bool isMobile = size.width < 700;
-      bool startMaximized = isMobile && windows.isEmpty;
+      final parent = parentId == null ? null : _findParentWindow(parentId);
+      final previous = windows.isEmpty ? null : windows.last;
+      final reference = parent ?? previous;
+      final startMaximized =
+          rememberedSize == null &&
+          ((isMobile && windows.isEmpty) ||
+              (parent?.isMaximized ?? false) ||
+              (previous?.isMaximized ?? false));
 
-      WindowItem? parentWindow;
-      if (parentId != null) {
-        parentWindow = _findParentWindow(parentId);
-        if (parentWindow != null && parentWindow.isMaximized) {
-          startMaximized = true;
-        } else if (windows.isNotEmpty && windows.last.isMaximized) {
-          startMaximized = true;
-        }
-      } else if (windows.isNotEmpty && windows.last.isMaximized) {
-        startMaximized = true;
-      }
+      double targetWidth = rememberedSize?.width ?? _defaultWindowWidth;
+      double targetHeight = rememberedSize?.height ?? safeRect.height;
 
-      double targetWidth = _defaultWindowWidth;
-      double targetHeight = safeRect.height;
-      WindowItem? referenceWindow =
-          parentWindow ?? (windows.isNotEmpty ? windows.last : null);
-
-      if (referenceWindow != null) {
-        targetWidth = referenceWindow.rect.width;
-        targetHeight = referenceWindow.rect.height;
-      }
-
-      final double maxWidth = (safeRect.width - 80)
-          .clamp(260.0, double.infinity)
+      final double maxWidth = safeRect.width
+          .clamp(200.0, double.infinity)
           .toDouble();
       final double maxHeight = safeRect.height
           .clamp(180.0, double.infinity)
           .toDouble();
-      targetWidth = targetWidth.clamp(260.0, maxWidth).toDouble();
-      targetHeight = targetHeight.clamp(180.0, maxHeight).toDouble();
+      targetWidth = targetWidth.clamp(200.0, maxWidth).toDouble();
+      targetHeight = targetHeight.clamp(150.0, maxHeight).toDouble();
 
       Rect startRect;
       Rect savedRect;
 
       if (startMaximized) {
-        startRect = safeRect;
         savedRect = _fitRectInsideSafeRect(
           Rect.fromLTWH(
             safeRect.left + 24,
@@ -1160,31 +1121,23 @@ class _GridDesktopState extends State<GridDesktop>
           ),
           safeRect,
         );
+      } else if (reference != null) {
+        // Canvas windows retain their side-by-side layout. The cascade belongs
+        // only to independent native windows.
+        savedRect = Rect.fromLTWH(
+          reference.rect.right + 18,
+          reference.rect.top,
+          targetWidth,
+          targetHeight,
+        );
       } else {
-        if (referenceWindow != null) {
-          const double openGap = 18;
-          final Rect rightOfCurrent = Rect.fromLTWH(
-            referenceWindow.rect.right + openGap,
-            referenceWindow.rect.top,
-            targetWidth,
-            targetHeight,
-          );
-          startRect = rightOfCurrent;
-        } else {
-          startRect = _fitRectInsideSafeRect(
-            Rect.fromLTWH(
-              safeRect.left,
-              safeRect.top,
-              targetWidth,
-              targetHeight,
-            ),
-            safeRect,
-          );
-        }
-        savedRect = startRect;
+        savedRect = _fitRectInsideSafeRect(
+          Rect.fromLTWH(safeRect.left, safeRect.top, targetWidth, targetHeight),
+          safeRect,
+        );
       }
-      openedRect = startRect;
-      openedAsMaximized = startMaximized;
+      startRect = startMaximized ? safeRect : savedRect;
+      if (!startMaximized && reference != null) revealRect = startRect;
 
       /// مهم‌ترین اصلاح:
       /// محتوای پنجره باید حتماً زیر WindowScope باشد تا WindowScope.of(context) در child null نشود.
@@ -1218,6 +1171,7 @@ class _GridDesktopState extends State<GridDesktop>
       windows.add(
         WindowItem(
           id: newId,
+          sizeStorageKey: storageKey,
           parentId: parentId,
           groupId: "default",
           title: title,
@@ -1235,18 +1189,14 @@ class _GridDesktopState extends State<GridDesktop>
       );
 
       focusWindow(newId);
+      _rememberWindowSize(windows.last);
     });
 
-    if (openedRect != null && !openedAsMaximized) {
+    if (revealRect != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _ensureWindowVisible(
-          openedRect!,
-          adjustHorizontal: true,
-          adjustVertical: false,
-        );
+        _ensureWindowVisible(revealRect!);
       });
     }
-
     return completer.future;
   }
 
@@ -1261,6 +1211,8 @@ class _GridDesktopState extends State<GridDesktop>
     if (index != -1) {
       if (_activeDragWindowId == id) _stopEdgeAutoScrollLoop();
       final window = windows[index];
+      _rememberWindowSize(window);
+      unawaited(_windowSizes.flush());
       if (window.completer != null && !window.completer!.isCompleted) {
         window.completer!.complete(result);
       }
@@ -1271,6 +1223,18 @@ class _GridDesktopState extends State<GridDesktop>
           windows.last.isFocused = true;
         }
       });
+    }
+  }
+
+  void _rememberWindowSize(WindowItem window) {
+    final wasMaximized =
+        window.isMaximized ||
+        (window.isMinimized && window.wasMaximizedBeforeMinimize);
+    final normalRect = wasMaximized
+        ? window.savedRect
+        : (window.isMinimized ? window.preMinRect : window.rect);
+    if (normalRect != null) {
+      _windowSizes.save(window.sizeStorageKey ?? window.title, normalRect.size);
     }
   }
 
@@ -1439,6 +1403,7 @@ class _GridDesktopState extends State<GridDesktop>
               constraints.maxWidth,
               constraints.maxHeight,
             );
+            _viewportSize = desktopSize;
             final padding = MediaQuery.of(context).padding;
             final safeRect = _getSafeRect(
               desktopSize,
@@ -1653,6 +1618,7 @@ class _GridDesktopState extends State<GridDesktop>
                                           } else {
                                             window.rect = rect;
                                           }
+                                          _rememberWindowSize(window);
                                         });
                                       },
                                       onDragStart: () =>

@@ -1,10 +1,19 @@
 import 'package:flutter/material.dart';
+
 import 'dart:async'; // اضافه شد برای استفاده از Completer
 
 enum SnapRegion {
-  none, left, right, top,
-  topLeft, topRight, bottomLeft, bottomRight,
-  leftThird, centerThird, rightThird
+  none,
+  left,
+  right,
+  top,
+  topLeft,
+  topRight,
+  bottomLeft,
+  bottomRight,
+  leftThird,
+  centerThird,
+  rightThird,
 }
 
 class DesktopApp {
@@ -31,7 +40,11 @@ class DesktopApp {
     this.nativeId,
     this.nativeArguments = const {},
     this.nativeWindowSize = const Size(900, 700),
-  }) : color = color ?? (connectionTag != null ? _generateColorFromTag(connectionTag) : Colors.blueGrey);
+  }) : color =
+           color ??
+           (connectionTag != null
+               ? _generateColorFromTag(connectionTag)
+               : Colors.blueGrey);
 
   static Color _generateColorFromTag(String tag) {
     int hash = tag.hashCode;
@@ -44,6 +57,7 @@ class DesktopApp {
 
 class WindowItem {
   final String id;
+  final String? sizeStorageKey;
   final String? parentId;
   final String groupId;
   String title;
@@ -65,6 +79,7 @@ class WindowItem {
 
   WindowItem({
     required this.id,
+    this.sizeStorageKey,
     this.parentId,
     required this.groupId,
     required this.title,

@@ -3,6 +3,7 @@
 import 'dart:ffi' hide Size;
 import 'dart:ui' show FlutterView;
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
@@ -10,9 +11,149 @@ import 'package:flutter/src/widgets/_window.dart' as windowing;
 import 'package:flutter/src/widgets/_window_win32.dart' as win32;
 
 import 'native_dialog_policy.dart';
+import 'native_window_placement.dart';
 
 bool _prepared = false;
 _RestartLauncher? _previousLauncher;
+
+/// Open beside the right edge of the requesting window.
+/// This also runs in release builds, independently of restart.
+void positionGridWindowToRight(
+  windowing.RegularWindowController controller, {
+  windowing.RegularWindowController? relativeTo,
+}) {
+  if (!Platform.isWindows ||
+      controller is! win32.RegularWindowControllerWin32) {
+    return;
+  }
+  var owner = WidgetsBinding.instance.windowingOwner;
+  if (owner is GridDialogWindowingOwner) owner = owner.delegate;
+  if (owner is! win32.WindowingOwnerWin32) return;
+  final anchor = relativeTo is win32.RegularWindowControllerWin32
+      ? relativeTo.windowHandle
+      : controller.windowHandle;
+  final api = _WindowPlacementApi(owner.allocator);
+  if (relativeTo is win32.RegularWindowControllerWin32) {
+    api.moveToRight(controller, anchor, relativeTo.rootView.devicePixelRatio);
+  }
+}
+
+final class _PlacementRect extends Struct {
+  @Int32()
+  external int left;
+  @Int32()
+  external int top;
+  @Int32()
+  external int right;
+  @Int32()
+  external int bottom;
+}
+
+final class _MonitorInfo extends Struct {
+  @Uint32()
+  external int cbSize;
+  external _PlacementRect monitor;
+  external _PlacementRect work;
+  @Uint32()
+  external int flags;
+}
+
+class _WindowPlacementApi {
+  _WindowPlacementApi(this.allocator);
+  final Allocator allocator;
+  static final _user32 = DynamicLibrary.open('user32.dll');
+  static final _monitorFromWindow = _user32
+      .lookupFunction<
+        Pointer<Void> Function(Pointer<Void>, Uint32),
+        Pointer<Void> Function(Pointer<Void>, int)
+      >('MonitorFromWindow');
+  static final _getMonitorInfo = _user32
+      .lookupFunction<
+        Int32 Function(Pointer<Void>, Pointer<_MonitorInfo>),
+        int Function(Pointer<Void>, Pointer<_MonitorInfo>)
+      >('GetMonitorInfoW');
+  static final _getWindowRect = _user32
+      .lookupFunction<
+        Int32 Function(Pointer<Void>, Pointer<_PlacementRect>),
+        int Function(Pointer<Void>, Pointer<_PlacementRect>)
+      >('GetWindowRect');
+  static final _setWindowPos = _user32
+      .lookupFunction<
+        Int32 Function(
+          Pointer<Void>,
+          Pointer<Void>,
+          Int32,
+          Int32,
+          Int32,
+          Int32,
+          Uint32,
+        ),
+        int Function(Pointer<Void>, Pointer<Void>, int, int, int, int, int)
+      >('SetWindowPos');
+
+  void moveToRight(
+    win32.RegularWindowControllerWin32 controller,
+    Pointer<Void> anchor,
+    double anchorScale,
+  ) {
+    final monitor = _monitorFromWindow(anchor, 2); // MONITOR_DEFAULTTONEAREST
+    final info = allocator<_MonitorInfo>();
+    final frame = allocator<_PlacementRect>();
+    try {
+      info.ref.cbSize = sizeOf<_MonitorInfo>();
+      if (_getMonitorInfo(monitor, info) == 0 ||
+          _getWindowRect(controller.windowHandle, frame) == 0) {
+        return;
+      }
+      final work = info.ref.work;
+      final scale = controller.rootView.devicePixelRatio;
+      final content = controller.contentSize;
+      final decorationWidth =
+          frame.ref.right - frame.ref.left - content.width * scale;
+      final decorationHeight =
+          frame.ref.bottom - frame.ref.top - content.height * scale;
+      final fittedSize = Size(
+        math.min(
+          content.width,
+          math.max(200, (work.right - work.left - decorationWidth) / scale),
+        ),
+        math.min(
+          content.height,
+          math.max(150, (work.bottom - work.top - decorationHeight) / scale),
+        ),
+      );
+      if (fittedSize != content) controller.setSize(fittedSize);
+      if (_getWindowRect(anchor, frame) == 0) return;
+      final origin = nativeWindowRightOrigin(
+        anchor: Rect.fromLTRB(
+          frame.ref.left.toDouble(),
+          frame.ref.top.toDouble(),
+          frame.ref.right.toDouble(),
+          frame.ref.bottom.toDouble(),
+        ),
+        workArea: Rect.fromLTRB(
+          work.left.toDouble(),
+          work.top.toDouble(),
+          work.right.toDouble(),
+          work.bottom.toDouble(),
+        ),
+        scale: anchorScale,
+      );
+      _setWindowPos(
+        controller.windowHandle,
+        nullptr,
+        origin.dx.toInt(),
+        origin.dy.toInt(),
+        0,
+        0,
+        0x0001 | 0x0004 | 0x0010, // NOSIZE | NOZORDER | NOACTIVATE
+      );
+    } finally {
+      allocator.free(frame);
+      allocator.free(info);
+    }
+  }
+}
 
 win32.WindowingOwnerWin32? _windowsOwner(windowing.WindowingOwner owner) {
   if (!kDebugMode || !Platform.isWindows) return null;

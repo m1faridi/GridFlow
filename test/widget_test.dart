@@ -3,8 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:grid_flow/grid_os.dart';
 import 'package:grid_flow/src/window_chrome.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   testWidgets('opens a desktop app from launcher', (WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(

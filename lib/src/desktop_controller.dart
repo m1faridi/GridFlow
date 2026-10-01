@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'models.dart';
 import 'window_widget.dart' show WindowScope;
 
@@ -13,11 +14,12 @@ abstract class DesktopController {
 class DesktopHandle {
   final DesktopController _controller;
   final BuildContext _ctx;
+  final String? _sourceWindowId;
 
-  DesktopHandle._(this._controller, this._ctx);
+  DesktopHandle._(this._controller, this._ctx, this._sourceWindowId);
 
   Future<dynamic> openApp(DesktopApp app, {String? parentId}) {
-    return _controller.openApp(app, parentId: parentId);
+    return _controller.openApp(app, parentId: parentId ?? _sourceWindowId);
   }
 
   void closeApp(dynamic result) {
@@ -40,9 +42,13 @@ class DesktopHandle {
 class DesktopProvider extends InheritedWidget {
   final DesktopController controller;
 
+  /// Native window that owns this provider; supplies the default opening parent.
+  final String? sourceWindowId;
+
   const DesktopProvider({
     super.key,
     required this.controller,
+    this.sourceWindowId,
     required super.child,
   });
 
@@ -50,10 +56,15 @@ class DesktopProvider extends InheritedWidget {
     final provider = context
         .dependOnInheritedWidgetOfExactType<DesktopProvider>();
     if (provider == null) return null;
-    return DesktopHandle._(provider.controller, context);
+    return DesktopHandle._(
+      provider.controller,
+      context,
+      provider.sourceWindowId,
+    );
   }
 
   @override
   bool updateShouldNotify(DesktopProvider oldWidget) =>
-      controller != oldWidget.controller;
+      controller != oldWidget.controller ||
+      sourceWindowId != oldWidget.sourceWindowId;
 }

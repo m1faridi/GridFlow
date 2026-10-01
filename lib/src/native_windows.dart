@@ -18,6 +18,7 @@ import 'native_dialog_policy.dart';
 import 'native_window_restart_stub.dart'
     if (dart.library.io) 'native_window_restart_windows.dart';
 import 'window_widget.dart' show WindowScope;
+import 'window_size_store.dart';
 
 typedef NativeWindowBuilder = Widget Function(NativeWindowLaunch launch);
 
@@ -32,12 +33,11 @@ class NativeWindowLaunch {
   final Size size;
   final bool isClosable;
 
-  NativeWindowLaunch._(this.windowId, DesktopApp app, this.parentId)
+  NativeWindowLaunch._(this.windowId, DesktopApp app, this.parentId, this.size)
     : appId = app.nativeId,
       title = app.title,
       arguments = Map.unmodifiable(app.nativeArguments),
       color = app.color,
-      size = app.nativeWindowSize,
       isClosable = app.isClosable;
 }
 
@@ -119,7 +119,13 @@ class GridNativeWindows {
     );
   }
 
-  static Future<dynamic> openApp(DesktopApp app, {String? parentId}) {
+  /// Opens beside the requesting window. Supply [context] for direct calls;
+  /// otherwise the currently active native window is used.
+  static Future<dynamic> openApp(
+    DesktopApp app, {
+    String? parentId,
+    BuildContext? context,
+  }) {
     final runtime = _runtime;
     if (runtime == null) {
       return Future.error(
@@ -128,7 +134,10 @@ class GridNativeWindows {
         ),
       );
     }
-    return runtime.openApp(app, parentId: parentId);
+    return runtime.openApp(
+      app,
+      parentId: parentId ?? runtime.windowIdForContext(context),
+    );
   }
 
   static bool ownsWindow(String id) => _runtime?.ownsWindow(id) ?? false;
@@ -227,6 +236,9 @@ class _GridNativeWindowHostState extends State<GridNativeWindowHost> {
 
 class _NativeWindow {
   final String id;
+  final String? sizeStorageKey;
+  VoidCallback? sizeListener;
+  Size? normalSize;
   final bool isClosable;
   final Completer<dynamic>? result;
   late final windowing.RegularWindowController controller;
@@ -236,7 +248,13 @@ class _NativeWindow {
   bool released = false;
   dynamic closeResult;
 
-  _NativeWindow(this.id, this.child, {this.isClosable = true, this.result});
+  _NativeWindow(
+    this.id,
+    this.child, {
+    this.isClosable = true,
+    this.result,
+    this.sizeStorageKey,
+  });
 }
 
 class _WindowDelegate with windowing.RegularWindowControllerDelegate {
@@ -257,6 +275,7 @@ class _NativeRuntime extends ChangeNotifier implements DesktopController {
   Map<String, NativeWindowBuilder> builders;
   Widget Function(Widget child)? appBuilder;
   final Map<String, _NativeWindow> _windows = {};
+  final _windowSizes = WindowSizeStore('native');
   int _nextId = 0;
   bool _disposed = false;
   bool _notificationScheduled = false;
@@ -275,7 +294,12 @@ class _NativeRuntime extends ChangeNotifier implements DesktopController {
     }
   }
 
-  void _create(_NativeWindow entry, String title, Size size) {
+  void _create(
+    _NativeWindow entry,
+    String title,
+    Size size, {
+    String? parentId,
+  }) {
     _validateSize(size);
     entry.controller = createGridRegularWindow(
       launcher: entry.id == 'grid-flow-launcher',
@@ -289,7 +313,41 @@ class _NativeRuntime extends ChangeNotifier implements DesktopController {
         onDestroyed: () => _onDestroyed(entry),
       ),
     );
+    if (entry.sizeStorageKey != null) {
+      final parent = _windows[parentId];
+      final launcher = _windows['grid-flow-launcher'];
+      positionGridWindowToRight(
+        entry.controller,
+        relativeTo: parent != null && !parent.closing
+            ? parent.controller
+            : (launcher != null && !launcher.closing
+                  ? launcher.controller
+                  : null),
+      );
+    }
     _windows[entry.id] = entry;
+    if (entry.sizeStorageKey != null) {
+      entry.normalSize = size;
+      entry.sizeListener = () => _rememberWindowSize(entry);
+      entry.controller.addListener(entry.sizeListener!);
+      _windowSizes.save(entry.sizeStorageKey!, size);
+      _rememberWindowSize(entry);
+    }
+  }
+
+  void _rememberWindowSize(_NativeWindow entry) {
+    if (entry.destroyed || entry.sizeStorageKey == null) return;
+    final controller = entry.controller;
+    if (controller.isMaximized ||
+        controller.isMinimized ||
+        controller.isFullscreen) {
+      return;
+    }
+    final size = controller.contentSize;
+    if (WindowSizeStore.isValid(size) && size != entry.normalSize) {
+      entry.normalSize = size;
+      _windowSizes.save(entry.sizeStorageKey!, size);
+    }
   }
 
   void addLauncher(Widget child, String title, Size size) {
@@ -309,10 +367,31 @@ class _NativeRuntime extends ChangeNotifier implements DesktopController {
 
   bool ownsWindow(String id) => _windows.containsKey(id);
 
+  String? windowIdForContext(BuildContext? context) {
+    if (context == null) return null;
+    final view = View.maybeOf(context);
+    for (final entry in _windows.values) {
+      if (!entry.closing && entry.controller.rootView == view) return entry.id;
+    }
+    return null;
+  }
+
+  String? _openingParentId(String? requestedId) {
+    final requested = _windows[requestedId];
+    if (requested != null && !requested.closing) return requested.id;
+    for (final entry in _windows.values) {
+      if (!entry.closing && entry.controller.isActivated) return entry.id;
+    }
+    final launcher = _windows['grid-flow-launcher'];
+    return launcher != null && !launcher.closing ? launcher.id : null;
+  }
+
   @override
-  Future<dynamic> openApp(DesktopApp app, {String? parentId}) {
+  Future<dynamic> openApp(DesktopApp app, {String? parentId}) async {
     if (_disposed || _exitRequested) return Future.value(null);
     try {
+      // Capture the caller before storage awaits or a new window takes focus.
+      final openingParentId = _openingParentId(parentId);
       _validateSize(app.nativeWindowSize);
       final builder = app.nativeId == null ? null : builders[app.nativeId];
       if (app.nativeId != null && builder == null) {
@@ -320,14 +399,18 @@ class _NativeRuntime extends ChangeNotifier implements DesktopController {
           'No native builder registered for "${app.nativeId}".',
         );
       }
+      final storageKey = app.nativeId ?? app.title;
+      final size = await _windowSizes.read(storageKey) ?? app.nativeWindowSize;
+      if (_disposed || _exitRequested) return null;
       final id = 'grid-flow-window-${_nextId++}';
-      final launch = NativeWindowLaunch._(id, app, parentId);
+      final launch = NativeWindowLaunch._(id, app, openingParentId, size);
       final content =
           builder?.call(launch) ??
           app.contentBuilder?.call(id) ??
           Center(child: Text(app.title));
       final host = DesktopProvider(
         controller: this,
+        sourceWindowId: id,
         child: WindowScope(
           windowId: id,
           child: Scaffold(body: content),
@@ -346,10 +429,11 @@ class _NativeRuntime extends ChangeNotifier implements DesktopController {
         child,
         isClosable: app.isClosable,
         result: Completer<dynamic>(),
+        sizeStorageKey: storageKey,
       );
-      _create(entry, app.title, app.nativeWindowSize);
+      _create(entry, app.title, size, parentId: openingParentId);
       _changed();
-      return entry.result!.future;
+      return await entry.result!.future;
     } catch (error, stack) {
       return Future.error(error, stack);
     }
@@ -359,6 +443,7 @@ class _NativeRuntime extends ChangeNotifier implements DesktopController {
   void closeWindow(String id, [dynamic result]) {
     final entry = _windows[id];
     if (_disposed || entry == null || entry.closing) return;
+    _rememberWindowSize(entry);
     entry.closing = true;
     entry.closeResult = result;
     _changed();
@@ -371,13 +456,17 @@ class _NativeRuntime extends ChangeNotifier implements DesktopController {
     }
   }
 
-  void _destroy(_NativeWindow entry) {
+  Future<void> _destroy(_NativeWindow entry) async {
+    await _windowSizes.flush();
     if (!entry.destroyed) entry.controller.destroy();
   }
 
   void _onDestroyed(_NativeWindow entry) {
     if (entry.destroyed) return;
     entry.destroyed = true;
+    if (entry.sizeListener != null) {
+      entry.controller.removeListener(entry.sizeListener!);
+    }
     _windows.remove(entry.id);
     if (!(entry.result?.isCompleted ?? true)) {
       entry.result!.complete(entry.closeResult);
@@ -385,7 +474,8 @@ class _NativeRuntime extends ChangeNotifier implements DesktopController {
     if (!_disposed) _changed();
     // The last native view may no longer deliver frames. Do not wait for a
     // frame to request exit, and coalesce simultaneous window destruction.
-    scheduleMicrotask(() {
+    scheduleMicrotask(() async {
+      await _windowSizes.flush();
       if (!_disposed && !_exitRequested && _windows.isEmpty) {
         _exitRequested = true;
         unawaited(
@@ -425,9 +515,10 @@ class _NativeRuntime extends ChangeNotifier implements DesktopController {
   void dispose() {
     _disposed = true;
     for (final entry in _windows.values.toList()) {
+      _rememberWindowSize(entry);
       if (!(entry.result?.isCompleted ?? true)) entry.result!.complete(null);
       _afterFrame(() {
-        if (!entry.destroyed) entry.controller.destroy();
+        unawaited(_destroy(entry));
       });
     }
     super.dispose();
