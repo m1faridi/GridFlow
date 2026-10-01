@@ -399,7 +399,7 @@ class _NativeRuntime extends ChangeNotifier implements DesktopController {
           'No native builder registered for "${app.nativeId}".',
         );
       }
-      final storageKey = app.nativeId ?? app.title;
+      final storageKey = app.resolvedWindowSizeKey;
       final size = await _windowSizes.read(storageKey) ?? app.nativeWindowSize;
       if (_disposed || _exitRequested) return null;
       final id = 'grid-flow-window-${_nextId++}';

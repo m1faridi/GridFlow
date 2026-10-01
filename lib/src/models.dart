@@ -27,6 +27,12 @@ class DesktopApp {
   /// When omitted, contentBuilder is also used for native windows.
   final String? nativeId;
 
+  /// Stable page identity for size persistence, independent of display title
+  /// and native builder registration. Instances of the same page share a key.
+  final String? windowSizeKey;
+
+  String get resolvedWindowSizeKey => windowSizeKey ?? nativeId ?? title;
+
   /// Initial data passed directly to the native builder in the same Dart isolate.
   final Map<String, dynamic> nativeArguments;
   final Size nativeWindowSize;
@@ -38,6 +44,7 @@ class DesktopApp {
     this.connectionTag,
     this.isClosable = true,
     this.nativeId,
+    this.windowSizeKey,
     this.nativeArguments = const {},
     this.nativeWindowSize = const Size(900, 700),
   }) : color =

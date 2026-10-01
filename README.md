@@ -95,9 +95,10 @@ side-by-side layout: the first starts at the left and subsequent windows open
 scrolls horizontally to reveal new windows.
 
 GridFlow automatically initializes `data_save: 0.4.6` and persists each app's
-last normal window size, including across restarts. The key is `nativeId` when
-provided, otherwise `title` (for example, `activity_user`). Use distinct, stable
-names for apps that should remember different sizes. Canvas and native sizes
+last normal window size, including across restarts. Set `DesktopApp.windowSizeKey`
+to a stable page identifier (for example, `activity_user`), independent of its
+display title. When omitted, the key falls back to `nativeId`, then `title`.
+Use distinct keys for different page types. Canvas and native sizes
 are stored separately. Minimizing, maximizing and fullscreen do not overwrite
 the normal size. Restored windows are fitted to the available space.
 

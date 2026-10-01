@@ -1033,7 +1033,7 @@ class _GridDesktopState extends State<GridDesktop>
       customBodyBuilder: app.contentBuilder,
       connectionTag: app.connectionTag,
       isClosable: app.isClosable,
-      sizeStorageKey: app.nativeId ?? app.title,
+      sizeStorageKey: app.resolvedWindowSizeKey,
     );
   }
 
