@@ -12,7 +12,7 @@ import 'package:flutter/src/widgets/_window_win32.dart' as win32;
 import 'native_dialog_policy.dart';
 
 bool _prepared = false;
-FlutterView? _previousLauncher;
+_RestartLauncher? _previousLauncher;
 
 win32.WindowingOwnerWin32? _windowsOwner(windowing.WindowingOwner owner) {
   if (!kDebugMode || !Platform.isWindows) return null;
@@ -33,7 +33,16 @@ void prepareNativeWindowRestart(windowing.WindowingOwner owner) {
     if (handle == nullptr) continue;
     final role = api.role(handle);
     if (role == 1) {
-      _previousLauncher = view;
+      final forwarding = _RestartDelegate();
+      final controller = _ReattachedController(
+        existing: view,
+        owner: windowsOwner,
+        delegate: forwarding,
+        size: const Size(200, 150),
+        constraints: const BoxConstraints(),
+        title: '',
+      );
+      _previousLauncher = _RestartLauncher(controller, forwarding);
     } else if (role == 2) {
       // Install a delegate in this isolate before destroying the old window.
       final controller = _ReattachedController(
@@ -77,14 +86,8 @@ windowing.RegularWindowController createGridRegularWindow({
           title: title,
           resizable: true,
         )
-      : _ReattachedController(
-          existing: previous,
-          owner: owner,
-          delegate: delegate,
-          size: size,
-          constraints: constraints,
-          title: title,
-        );
+      : previous.controller;
+  if (previous != null) previous.forwarding.target = delegate;
   final api = _WindowApi(owner.allocator);
   api.setRole(controller.windowHandle, launcher ? 1 : 2);
   if (previous != null) {
@@ -92,6 +95,21 @@ windowing.RegularWindowController createGridRegularWindow({
     controller.setConstraints(constraints);
   }
   return controller;
+}
+
+class _RestartLauncher {
+  _RestartLauncher(this.controller, this.forwarding);
+  final _ReattachedController controller;
+  final _RestartDelegate forwarding;
+}
+
+class _RestartDelegate with windowing.RegularWindowControllerDelegate {
+  windowing.RegularWindowControllerDelegate? target;
+  @override
+  void onWindowCloseRequested(windowing.RegularWindowController controller) =>
+      target?.onWindowCloseRequested(controller);
+  @override
+  void onWindowDestroyed() => target?.onWindowDestroyed();
 }
 
 /// The SDK does not expose an adoption constructor. Let its constructor install
