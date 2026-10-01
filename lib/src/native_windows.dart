@@ -14,6 +14,7 @@ import 'package:flutter/src/widgets/_window.dart' as windowing;
 
 import 'desktop_controller.dart';
 import 'models.dart';
+import 'native_dialog_policy.dart';
 import 'window_widget.dart' show WindowScope;
 
 typedef NativeWindowBuilder = Widget Function(NativeWindowLaunch launch);
@@ -69,6 +70,11 @@ class GridNativeWindows {
         isWindowingEnabled = false;
         rethrow;
       }
+    }
+    if (_isDesktop &&
+        isWindowingEnabled &&
+        binding.windowingOwner is! GridDialogWindowingOwner) {
+      binding.windowingOwner = GridDialogWindowingOwner(binding.windowingOwner);
     }
     return binding;
   }

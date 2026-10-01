@@ -308,3 +308,19 @@ debugPrint("Window closed with result: $result");
 
 DesktopProvider.of(context)?.closeApp("return");
 ```
+
+### Dialogs in native windows
+
+GridFlow keeps Flutter's `showDialog`, `showAdaptiveDialog`, `showGeneralDialog`,
+and `showCupertinoDialog` inside their originating window. Continue using the
+standard Flutter APIs; no application-level replacements are needed. Modal
+barriers, themes, navigator selection, and returned results are preserved.
+`GridNativeWindows.openApp` still opens independent native windows.
+
+This policy is installed by `GridNativeWindows.ensureInitialized`, including
+when called by `run` or `GridNativeWindowHost`. It delegates ordinary window
+creation to Flutter and uses Flutter 3.47.5's unsupported-native-dialog fallback
+for dialogs. Only the exact internal fallback signal is consumed; unrelated
+Flutter errors are forwarded unchanged. Direct native `DialogWindowController`
+creation is unsupported under this policy. The experimental Flutter APIs used
+here should be rechecked on SDK upgrades.
