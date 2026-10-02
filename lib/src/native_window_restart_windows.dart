@@ -12,6 +12,7 @@ import 'package:flutter/src/widgets/_window_win32.dart' as win32;
 
 import 'native_dialog_policy.dart';
 import 'native_window_placement.dart';
+import 'native_window_placement_macos.dart';
 
 bool _prepared = false;
 _RestartLauncher? _previousLauncher;
@@ -22,6 +23,10 @@ void positionGridWindowToRight(
   windowing.RegularWindowController controller, {
   windowing.RegularWindowController? relativeTo,
 }) {
+  if (Platform.isMacOS) {
+    positionGridWindowToRightMacOS(controller, relativeTo: relativeTo);
+    return;
+  }
   if (!Platform.isWindows ||
       controller is! win32.RegularWindowControllerWin32) {
     return;

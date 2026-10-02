@@ -79,7 +79,7 @@ flutter pub get
 
 ### Window placement and remembered sizes
 
-With Independent windows enabled, native Windows windows open beside the right
+With Independent windows enabled, native Windows and macOS windows open beside the right
 edge of the window that requests them, using its current position and width.
 Opening from the main launcher always uses that launcher, even when other
 windows are already open. `DesktopProvider` carries the caller automatically;
@@ -87,8 +87,9 @@ direct `GridNativeWindows.openApp` calls can pass `context` or `parentId`, and
 otherwise use the native window active when the request starts.
 Each new window has a 5 logical pixel horizontal gap and starts 32 logical
 pixels lower; near a screen edge its title bar stays reachable
-without jumping to the screen's top left. Other native platforms retain their
-system placement.
+without jumping to the screen's top left. macOS uses the requesting window's
+screen and its visible area, accounting for the menu bar, Dock and Retina
+coordinates. Other native platforms retain their system placement.
 With Independent windows disabled (or unavailable), canvas windows retain their
 side-by-side layout: the first starts at the left and subsequent windows open
 18 logical pixels to the right of their parent or the focused window. The canvas

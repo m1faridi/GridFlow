@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
-/// Screen coordinates are physical pixels, including on secondary monitors.
+/// Downward screen coordinates: physical pixels on Windows, points on macOS.
 Offset nativeWindowRightOrigin({
   required Rect anchor,
   required Rect workArea,
