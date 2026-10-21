@@ -12,6 +12,7 @@ import 'native_windows.dart';
 import 'models.dart';
 import 'painters.dart';
 import 'window_chrome.dart';
+import 'window_content.dart';
 import 'window_widget.dart';
 import 'window_size_store.dart';
 
@@ -1142,7 +1143,7 @@ class _GridDesktopState extends State<GridDesktop>
       /// مهم‌ترین اصلاح:
       /// محتوای پنجره باید حتماً زیر WindowScope باشد تا WindowScope.of(context) در child null نشود.
       final Widget innerContent = (customBodyBuilder != null)
-          ? customBodyBuilder(newId)
+          ? WindowContent(builder: () => customBodyBuilder(newId))
           : Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(

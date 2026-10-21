@@ -350,6 +350,29 @@ for dialogs. Only the exact internal fallback signal is consumed; unrelated
 Flutter errors are forwarded unchanged. Direct native `DialogWindowController`
 creation is unsupported under this policy. The experimental Flutter APIs used
 here should be rechecked on SDK upgrades.
+### Hot reload
+
+Hot reload refreshes `DesktopApp.contentBuilder`, registered native builders and
+the native `appBuilder` for windows that are already open. Window identities,
+positions, sizes, pending close results and compatible widget state are retained.
+Dragging and resizing still reuse the existing content.
+
+After installing this fix, stop and run the app once to mount the new content
+host. Subsequent IDE hot reloads, including reload on save, update open windows.
+As with ordinary Flutter apps, changes made only in `main` or `initState` need a
+hot restart.
+
+To verify actual native hot reload on macOS:
+
+```sh
+cd example
+flutter run -d macos -t test_driver/native_hot_reload_smoke.dart
+```
+
+Change the `revision` getter in that file and hot reload repeatedly. Each reload
+must print `GRIDFLOW_RELOAD_OK`, with the same three view IDs, updated content and
+the original form state.
+
 ### Windows hot restart
 
 On Flutter 3.47.5, native windows survive a Dart hot restart. In Windows debug

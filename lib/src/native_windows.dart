@@ -17,6 +17,7 @@ import 'models.dart';
 import 'native_dialog_policy.dart';
 import 'native_window_restart_stub.dart'
     if (dart.library.io) 'native_window_restart_windows.dart';
+import 'window_content.dart';
 import 'window_widget.dart' show WindowScope;
 import 'window_size_store.dart';
 
@@ -404,26 +405,29 @@ class _NativeRuntime extends ChangeNotifier implements DesktopController {
       if (_disposed || _exitRequested) return null;
       final id = 'grid-flow-window-${_nextId++}';
       final launch = NativeWindowLaunch._(id, app, openingParentId, size);
-      final content =
-          builder?.call(launch) ??
-          app.contentBuilder?.call(id) ??
-          Center(child: Text(app.title));
-      final host = DesktopProvider(
-        controller: this,
-        sourceWindowId: id,
-        child: WindowScope(
-          windowId: id,
-          child: Scaffold(body: content),
-        ),
-      );
-      final child =
-          appBuilder?.call(host) ??
-          MaterialApp(
-            debugShowCheckedModeBanner: false,
-            title: app.title,
-            theme: ThemeData(colorSchemeSeed: app.color),
-            home: host,
+      final child = WindowContent(
+        builder: () {
+          final content =
+              builders[app.nativeId]?.call(launch) ??
+              app.contentBuilder?.call(id) ??
+              Center(child: Text(app.title));
+          final host = DesktopProvider(
+            controller: this,
+            sourceWindowId: id,
+            child: WindowScope(
+              windowId: id,
+              child: Scaffold(body: content),
+            ),
           );
+          return appBuilder?.call(host) ??
+              MaterialApp(
+                debugShowCheckedModeBanner: false,
+                title: app.title,
+                theme: ThemeData(colorSchemeSeed: app.color),
+                home: host,
+              );
+        },
+      );
       final entry = _NativeWindow(
         id,
         child,
