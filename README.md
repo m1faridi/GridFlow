@@ -373,6 +373,19 @@ Change the `revision` getter in that file and hot reload repeatedly. Each reload
 must print `GRIDFLOW_RELOAD_OK`, with the same three view IDs, updated content and
 the original form state.
 
+#### macOS denies writing `main.dart.dill`
+
+If reload or restart fails to create `main.dart.dill` or
+`main.dart.incremental.dill` under `~/Library/Containers/.../Data/tmp`, check
+macOS **System Settings → Privacy & Security → Files & Folders**. Expand the IDE
+that launched Flutter (for example, Android Studio) and allow access to your
+app's data. Stop and run the app again; reopen the IDE if macOS requests it.
+
+Flutter's desktop DevFS writer copies compiled files directly into the running
+app's temporary directory. macOS 27 denies access to other apps' containers by
+default; granting access to that specific app avoids needing Full Disk Access
+or disabling App Sandbox. See [Apple's macOS 27 release notes](https://developer.apple.com/documentation/macos-release-notes/macos-27-release-notes#System-Integrity-Protection).
+
 ### Windows hot restart
 
 On Flutter 3.47.5, native windows survive a Dart hot restart. In Windows debug

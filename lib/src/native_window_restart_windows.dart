@@ -214,12 +214,16 @@ windowing.RegularWindowController createGridRegularWindow({
 }) {
   final owner = _windowsOwner(WidgetsBinding.instance.windowingOwner);
   if (owner == null) {
-    return windowing.RegularWindowController(
+    final controller = windowing.RegularWindowController(
       size: size,
       constraints: constraints,
       title: title,
       delegate: delegate,
     );
+    if (Platform.isMacOS && launcher) {
+      restoreGridLauncherAfterRestartMacOS(controller);
+    }
+    return controller;
   }
   final previous = launcher ? _previousLauncher : null;
   if (launcher) _previousLauncher = null;
