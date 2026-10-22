@@ -386,6 +386,25 @@ app's temporary directory. macOS 27 denies access to other apps' containers by
 default; granting access to that specific app avoids needing Full Disk Access
 or disabling App Sandbox. See [Apple's macOS 27 release notes](https://developer.apple.com/documentation/macos-release-notes/macos-27-release-notes#System-Integrity-Protection).
 
+### macOS hot restart
+
+Flutter 3.47.5 closes its native macOS windows when the Dart isolate restarts.
+In debug builds GridFlow retains the launcher's last native frame and restores
+its position and size on the replacement launcher in the same engine session.
+Cold starts keep the application's normal startup sizing and placement. Dart
+state still resets, and independent child windows follow the app's startup logic.
+
+Stop and run once after installing this adapter. To check real native geometry:
+
+```sh
+cd example
+flutter run -d macos -t test_driver/launcher_restart_macos_smoke.dart
+```
+
+Press `R` repeatedly. Each `GRIDFLOW_MACOS_RESTART_OK` line must match the previous
+`READY` frame. The probe moves and resizes the launcher after each check so the
+next restart must restore the most recent geometry.
+
 ### Windows hot restart
 
 On Flutter 3.47.5, native windows survive a Dart hot restart. In Windows debug
