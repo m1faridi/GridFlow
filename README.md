@@ -335,6 +335,33 @@ debugPrint("Window closed with result: $result");
 DesktopProvider.of(context)?.closeApp("return");
 ```
 
+### Localized titles and controls
+
+`DesktopApp.titleBuilder` resolves the displayed title in the current window's
+localization context. Open captions, launcher entries, minimized cards and native
+OS titles update when that context changes, preserving the window and its content:
+
+```dart
+DesktopApp(
+  title: 'Dashboard',
+  titleBuilder: (context) => AppLocalizations.of(context).dashboard,
+  windowSizeKey: 'dashboard',
+  contentBuilder: (_) => Dashboard(),
+)
+```
+
+`AppLocalizations` and `Dashboard` stand for your application's widgets and catalog.
+The original `title` remains the fallback; `windowSizeKey` and saved sizes are
+independent of the displayed translation.
+
+Wrap `GridDesktop` with `GridLocalizedLabels(translate: translate, child: ...)` to
+translate GridFlow's built-in labels, such as `Zoom in`, `Fit all windows` and
+`Restore`. The callback receives the default English text and returns its
+translation. Rebuild the scope when the language changes. Without a scope,
+GridFlow keeps its default English labels. For independent windows, provide the
+scope above the root host or inside the native `appBuilder`, along with your
+normal localization delegates.
+
 ### Dialogs in native windows
 
 GridFlow keeps Flutter's `showDialog`, `showAdaptiveDialog`, `showGeneralDialog`,

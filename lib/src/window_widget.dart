@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_box_transform/flutter_box_transform.dart';
 
 import 'models.dart';
+import 'localized_labels.dart';
 import 'window_chrome.dart';
 
 /// اندازهٔ کارت فشرده‌ای که جای پنجرهٔ minimize شده نمایش داده می‌شود.
@@ -271,7 +272,7 @@ class FastWindow extends StatelessWidget {
             ),
             clipBehavior: Clip.hardEdge,
             child: window.hasTitleBar
-                ? _buildWithTitleBar(scopedContent)
+                ? _buildWithTitleBar(context, scopedContent)
                 : scopedContent,
           ),
         );
@@ -330,7 +331,7 @@ class FastWindow extends StatelessWidget {
     );
   }
 
-  Widget _buildWithTitleBar(Widget scopedContent) {
+  Widget _buildWithTitleBar(BuildContext context, Widget scopedContent) {
     const double toolbarHeight = 34;
     const double titleFontSize = 12;
     final WindowChromeStyle style = chromeStyle ?? defaultWindowChromeStyle();
@@ -361,7 +362,7 @@ class FastWindow extends StatelessWidget {
     );
 
     final Widget titleText = Text(
-      window.title,
+      window.resolveTitle(context),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
@@ -460,7 +461,8 @@ class _MinimizedWindowCardState extends State<_MinimizedWindowCard> {
 
     return Semantics(
       button: true,
-      label: 'Restore ${widget.window.title}',
+      label:
+          '${GridLocalizedLabels.text(context, 'Restore')} ${widget.window.resolveTitle(context)}',
       child: Listener(
         behavior: HitTestBehavior.opaque,
         onPointerDown: (event) {
@@ -550,7 +552,7 @@ class _MinimizedWindowCardState extends State<_MinimizedWindowCard> {
                     const SizedBox(width: 9),
                     Expanded(
                       child: Text(
-                        widget.window.title,
+                        widget.window.resolveTitle(context),
                         style: TextStyle(
                           color: emphasized
                               ? const Color(0xFFF1F4F8)
@@ -626,7 +628,7 @@ class DefaultWindowContent extends StatelessWidget {
           ElevatedButton.icon(
             onPressed: onOpenChild,
             icon: const Icon(Icons.add_link, size: 18),
-            label: const Text("Open Child Window"),
+            label: Text(GridLocalizedLabels.text(context, 'Open Child Window')),
             style: ElevatedButton.styleFrom(
               backgroundColor: color,
               foregroundColor: Colors.white,

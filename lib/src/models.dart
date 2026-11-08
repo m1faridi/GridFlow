@@ -18,6 +18,13 @@ enum SnapRegion {
 
 class DesktopApp {
   final String title;
+
+  /// Resolves the displayed title in the current window's localization scope.
+  /// The original title and windowSizeKey remain stable storage identities.
+  final String Function(BuildContext context)? titleBuilder;
+
+  String resolveTitle(BuildContext context) =>
+      titleBuilder?.call(context) ?? title;
   final Color color;
   final Widget Function(String id)? contentBuilder;
   final String? connectionTag;
@@ -39,6 +46,7 @@ class DesktopApp {
 
   DesktopApp({
     required this.title,
+    this.titleBuilder,
     Color? color,
     this.contentBuilder,
     this.connectionTag,
@@ -68,6 +76,11 @@ class WindowItem {
   final String? parentId;
   final String groupId;
   String title;
+  final String Function(BuildContext context)? titleBuilder;
+
+  String resolveTitle(BuildContext context) =>
+      titleBuilder?.call(context) ?? title;
+
   Color themeColor;
   Widget content;
   Rect rect;
@@ -90,6 +103,7 @@ class WindowItem {
     this.parentId,
     required this.groupId,
     required this.title,
+    this.titleBuilder,
     required this.themeColor,
     required this.content,
     required this.rect,

@@ -366,6 +366,26 @@ class _NativeRuntime extends ChangeNotifier implements DesktopController {
     if (entry.controller.title != title) entry.controller.setTitle(title);
   }
 
+  void _updateWindowTitle(String id, String title) {
+    final entry = _windows[id];
+    if (_disposed ||
+        entry == null ||
+        entry.closing ||
+        entry.controller.title == title) {
+      return;
+    }
+    // Native controllers notify listeners when their title changes. Update
+    // after build so listeners never rebuild a window during its own build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_disposed &&
+          !entry.closing &&
+          !entry.destroyed &&
+          entry.controller.title != title) {
+        entry.controller.setTitle(title);
+      }
+    });
+  }
+
   bool ownsWindow(String id) => _windows.containsKey(id);
 
   String? windowIdForContext(BuildContext? context) {
@@ -409,20 +429,26 @@ class _NativeRuntime extends ChangeNotifier implements DesktopController {
         builder: () {
           final content =
               builders[app.nativeId]?.call(launch) ??
-              app.contentBuilder?.call(id) ??
-              Center(child: Text(app.title));
+              app.contentBuilder?.call(id);
           final host = DesktopProvider(
             controller: this,
             sourceWindowId: id,
             child: WindowScope(
               windowId: id,
-              child: Scaffold(body: content),
+              child: Builder(
+                builder: (context) {
+                  final title = app.resolveTitle(context);
+                  _updateWindowTitle(id, title);
+                  return Scaffold(body: content ?? Center(child: Text(title)));
+                },
+              ),
             ),
           );
           return appBuilder?.call(host) ??
               MaterialApp(
                 debugShowCheckedModeBanner: false,
                 title: app.title,
+                onGenerateTitle: app.resolveTitle,
                 theme: ThemeData(colorSchemeSeed: app.color),
                 home: host,
               );

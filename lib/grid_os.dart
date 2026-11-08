@@ -1,5 +1,6 @@
 export 'src/grid_desktop.dart';
 export 'src/models.dart';
+export 'src/localized_labels.dart';
 export 'src/window_chrome.dart' show WindowChromeStyle;
 export 'src/native_windows.dart'
     show

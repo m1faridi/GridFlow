@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'desktop_controller.dart';
 import 'native_windows.dart';
 import 'models.dart';
+import 'localized_labels.dart';
 import 'painters.dart';
 import 'window_chrome.dart';
 import 'window_content.dart';
@@ -1031,6 +1032,7 @@ class _GridDesktopState extends State<GridDesktop>
       app.title,
       app.color,
       parentId: parentId,
+      titleBuilder: app.titleBuilder,
       customBodyBuilder: app.contentBuilder,
       connectionTag: app.connectionTag,
       isClosable: app.isClosable,
@@ -1052,7 +1054,11 @@ class _GridDesktopState extends State<GridDesktop>
       );
       if (mounted) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(content: Text('Could not open this window.')),
+          SnackBar(
+            content: Text(
+              GridLocalizedLabels.text(context, 'Could not open this window.'),
+            ),
+          ),
         );
       }
     }
@@ -1062,6 +1068,7 @@ class _GridDesktopState extends State<GridDesktop>
     String title,
     Color color, {
     String? parentId,
+    String Function(BuildContext context)? titleBuilder,
     Widget Function(String id)? customBodyBuilder,
     String? connectionTag,
     bool isClosable = true,
@@ -1155,12 +1162,14 @@ class _GridDesktopState extends State<GridDesktop>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey[800],
+                  Builder(
+                    builder: (context) => Text(
+                      titleBuilder?.call(context) ?? title,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey[800],
+                      ),
                     ),
                   ),
                 ],
@@ -1176,6 +1185,7 @@ class _GridDesktopState extends State<GridDesktop>
           parentId: parentId,
           groupId: "default",
           title: title,
+          titleBuilder: titleBuilder,
           themeColor: color,
           rect: startRect,
           savedRect: savedRect,
@@ -1658,7 +1668,7 @@ class _GridDesktopState extends State<GridDesktop>
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 18),
                           child: AppIconLauncher(
-                            label: app.title,
+                            label: app.resolveTitle(context),
                             color: app.color,
                             onTap: () => _openAppFromLauncher(app),
                           ),
@@ -1967,7 +1977,7 @@ class _ZoomHud extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _HudButton(
-            tooltip: 'Zoom out',
+            tooltip: GridLocalizedLabels.text(context, 'Zoom out'),
             onTap: onZoomOut,
             child: const Icon(
               Icons.remove_rounded,
@@ -1976,7 +1986,7 @@ class _ZoomHud extends StatelessWidget {
             ),
           ),
           _HudButton(
-            tooltip: 'Reset to 100%',
+            tooltip: GridLocalizedLabels.text(context, 'Reset to 100%'),
             onTap: onResetZoom,
             width: 52,
             child: Text(
@@ -1991,7 +2001,7 @@ class _ZoomHud extends StatelessWidget {
             ),
           ),
           _HudButton(
-            tooltip: 'Zoom in',
+            tooltip: GridLocalizedLabels.text(context, 'Zoom in'),
             onTap: onZoomIn,
             child: const Icon(
               Icons.add_rounded,
@@ -2006,7 +2016,7 @@ class _ZoomHud extends StatelessWidget {
             color: const Color(0x14FFFFFF),
           ),
           _HudButton(
-            tooltip: 'Fit all windows',
+            tooltip: GridLocalizedLabels.text(context, 'Fit all windows'),
             onTap: onFitAll,
             child: Icon(
               Icons.fit_screen,
