@@ -235,9 +235,7 @@ class FastWindow extends StatelessWidget {
       draggable: false,
       allowFlippingWhileResizing: false,
       onResizeStart: (_, event) {
-        if (!window.isFocused) {
-          onFocus();
-        }
+        onFocus();
       },
       onChanged: (result, event) {
         if (!window.isMaximized && !window.isMinimized) {
@@ -286,7 +284,7 @@ class FastWindow extends StatelessWidget {
                 (event.buttons & kPrimaryMouseButton) == 0) {
               return;
             }
-            if (!window.isFocused) onFocus();
+            onFocus();
           },
           // RepaintBoundary: جابجایی یا انیمیشن پنجره‌های دیگر باعث
           // رندر دوباره این پنجره نمی‌شود.
@@ -470,7 +468,7 @@ class _MinimizedWindowCardState extends State<_MinimizedWindowCard> {
               (event.buttons & kPrimaryMouseButton) == 0) {
             return;
           }
-          if (!widget.window.isFocused) widget.onFocus();
+          widget.onFocus();
           setState(() => _pressed = true);
         },
         onPointerUp: (_) {

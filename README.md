@@ -188,7 +188,8 @@ opener also leaves its independent windows alive; the application exits when
 the last window closes. OS-level Quit exits the entire application. Removing the
 root `GridNativeWindowHost` releases all windows and completes pending results.
 Native title bars, resizing, minimizing and maximizing belong to the OS.
-Canvas snapping, connection lines and zoom only apply to embedded windows.
+Canvas connection lines and zoom only apply to embedded windows. Dragging a
+canvas window repositions it without snapping.
 
 ### Shared inherited state
 
@@ -239,7 +240,6 @@ or per-window engine/plugin registration is needed.
 
 ```dart
 GridDesktop(
-  isWindowMode: true,
   hasTitleBar: true,
 
   autoStartApps: [
@@ -276,6 +276,9 @@ GridDesktop(
   ],
 )
 ```
+
+`hasTitleBar` explicitly controls canvas window title bars. For compatibility,
+`isWindowMode: true` hides them when `hasTitleBar` is omitted.
 
 ### 2) Open New Windows at Runtime (Child Windows)
 

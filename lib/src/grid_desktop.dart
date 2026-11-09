@@ -23,6 +23,9 @@ class GridDesktop extends StatefulWidget {
   final List<DesktopApp> apps;
   final Widget? background;
   final List<DesktopApp>? autoStartApps;
+
+  /// Hides canvas title bars when [hasTitleBar] is not specified.
+  /// An explicit [hasTitleBar] takes precedence.
   final bool isWindowMode;
 
   /// Opens new apps using Flutter windowing on macOS, Windows and Linux.
@@ -44,11 +47,12 @@ class GridDesktop extends StatefulWidget {
     required this.apps,
     this.background,
     this.autoStartApps,
-    this.isWindowMode = false,
+    bool isWindowMode = false,
     this.useNativeWindows = false,
-    this.hasTitleBar = true,
+    bool? hasTitleBar,
     this.chromeStyle,
-  });
+  }) : isWindowMode = isWindowMode,
+       hasTitleBar = hasTitleBar ?? !isWindowMode;
 
   @override
   State<GridDesktop> createState() => _GridDesktopState();
@@ -98,6 +102,7 @@ class _GridDesktopState extends State<GridDesktop>
   Offset _lastGlobalFocalPoint = Offset.zero;
 
   List<WindowItem> windows = [];
+  final Map<String, FocusScopeNode> _windowFocusScopes = {};
   final _windowSizes = WindowSizeStore('canvas');
   Size? _viewportSize;
   int _nextWindowId = 0;
@@ -150,8 +155,7 @@ class _GridDesktopState extends State<GridDesktop>
   @override
   void didUpdateWidget(covariant GridDesktop oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.hasTitleBar != oldWidget.hasTitleBar ||
-        widget.isWindowMode != oldWidget.isWindowMode) {
+    if (widget.hasTitleBar != oldWidget.hasTitleBar) {
       setState(() {
         for (var window in windows) {
           window.hasTitleBar = widget.hasTitleBar;
@@ -175,6 +179,10 @@ class _GridDesktopState extends State<GridDesktop>
       }
     }
     windows.clear();
+    for (final node in _windowFocusScopes.values) {
+      node.dispose();
+    }
+    _windowFocusScopes.clear();
     unawaited(_windowSizes.flush());
     super.dispose();
   }
@@ -1198,6 +1206,7 @@ class _GridDesktopState extends State<GridDesktop>
           completer: completer,
         ),
       );
+      _windowFocusScopes[newId] = FocusScopeNode(debugLabel: 'GridFlow $newId');
 
       focusWindow(newId);
       _rememberWindowSize(windows.last);
@@ -1222,6 +1231,9 @@ class _GridDesktopState extends State<GridDesktop>
     if (index != -1) {
       if (_activeDragWindowId == id) _stopEdgeAutoScrollLoop();
       final window = windows[index];
+      final focusNode = _windowFocusScopes.remove(id);
+      final wasKeyboardFocused = focusNode?.hasFocus ?? false;
+      String? nextFocusId;
       _rememberWindowSize(window);
       unawaited(_windowSizes.flush());
       if (window.completer != null && !window.completer!.isCompleted) {
@@ -1229,11 +1241,18 @@ class _GridDesktopState extends State<GridDesktop>
       }
       setState(() {
         windows.removeAt(index);
-        // اگر پنجرهٔ فوکوس‌شده بسته شد، بالاترین پنجرهٔ باقی‌مانده فوکوس بگیرد.
-        if (window.isFocused && windows.isNotEmpty) {
-          windows.last.isFocused = true;
+        if (window.isFocused || wasKeyboardFocused) {
+          final next =
+              _topmostVisibleWindow() ??
+              (windows.isEmpty ? null : windows.last);
+          for (final remaining in windows) {
+            remaining.isFocused = identical(remaining, next);
+          }
+          nextFocusId = next?.id;
         }
       });
+      focusNode?.dispose();
+      if (nextFocusId != null) _requestWindowKeyboardFocus(nextFocusId!);
     }
   }
 
@@ -1249,24 +1268,60 @@ class _GridDesktopState extends State<GridDesktop>
     }
   }
 
+  WindowItem? _topmostVisibleWindow({String? excludingId}) {
+    for (final window in windows.reversed) {
+      if (window.id != excludingId && !window.isMinimized) return window;
+    }
+    return null;
+  }
+
+  void _requestWindowKeyboardFocus(String id) {
+    final node = _windowFocusScopes[id];
+    if (node == null) return;
+    final window = windows.where((candidate) => candidate.id == id).firstOrNull;
+    if (window == null) return;
+    // A newly opened or restored scope cannot receive focus until its widget
+    // has attached and updated its focusability in the next frame.
+    if (node.context == null ||
+        !node.canRequestFocus ||
+        (!window.isMinimized && !node.descendantsAreFocusable)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted &&
+            identical(_windowFocusScopes[id], node) &&
+            windows.any(
+              (candidate) => candidate.id == id && candidate.isFocused,
+            )) {
+          if (window.isMinimized) {
+            node.requestScopeFocus();
+          } else {
+            node.requestFocus();
+          }
+        }
+      });
+    } else if (window.isMinimized) {
+      node.requestScopeFocus();
+    } else {
+      node.requestFocus();
+    }
+  }
+
   void focusWindow(String id) {
     final index = windows.indexWhere((w) => w.id == id);
+    if (index == -1) return;
+    _requestWindowKeyboardFocus(id);
     if (index == windows.length - 1 &&
-        index >= 0 &&
         windows[index].isFocused &&
         !windows.take(index).any((window) => window.isFocused)) {
       return;
     }
-    if (index != -1) {
-      setState(() {
-        final window = windows.removeAt(index);
-        window.isFocused = true;
-        for (var w in windows) {
-          w.isFocused = false;
-        }
-        windows.add(window);
-      });
-    }
+    setState(() {
+      final window = windows.removeAt(index);
+      window.isFocused = true;
+      for (var w in windows) {
+        w.isFocused = false;
+      }
+      windows.add(window);
+    });
   }
 
   void toggleMaximize(String id, Size screenSize, EdgeInsets padding) {
@@ -1304,6 +1359,8 @@ class _GridDesktopState extends State<GridDesktop>
     final index = windows.indexWhere((w) => w.id == id);
     if (index == -1) return;
     if (_activeDragWindowId == id) _stopEdgeAutoScrollLoop();
+    String? nextFocusId;
+    var shouldParkFocus = false;
     setState(() {
       final window = windows[index];
       if (window.isMinimized) {
@@ -1324,8 +1381,21 @@ class _GridDesktopState extends State<GridDesktop>
           kMinimizedWindowSize.width,
           kMinimizedWindowSize.height,
         );
+        if (window.isFocused || (_windowFocusScopes[id]?.hasFocus ?? false)) {
+          final next = _topmostVisibleWindow(excludingId: id);
+          for (final candidate in windows) {
+            candidate.isFocused = identical(candidate, next ?? window);
+          }
+          nextFocusId = next?.id;
+          shouldParkFocus = next == null;
+        }
       }
     });
+    if (nextFocusId != null) {
+      _requestWindowKeyboardFocus(nextFocusId!);
+    } else if (shouldParkFocus) {
+      _requestWindowKeyboardFocus(id);
+    }
   }
 
   void onWindowDragUpdate(
@@ -1595,59 +1665,66 @@ class _GridDesktopState extends State<GridDesktop>
                                       ),
                                     ),
                                   ...windows.map((window) {
-                                    return FastWindow(
-                                      key: ValueKey(window.id),
-                                      window: window,
-                                      renderRect: window.isMaximized
-                                          ? safeRect
-                                          : window.rect,
-                                      desktopSize: desktopSize,
-                                      padding: padding,
-                                      chromeStyle: widget.chromeStyle,
-                                      canvasScale: _backgroundScale,
-                                      onFocus: () => focusWindow(window.id),
-                                      onClose: () => closeWindow(window.id),
-                                      onMaximize: () => toggleMaximize(
-                                        window.id,
-                                        desktopSize,
-                                        padding,
-                                      ),
-                                      onMinimize: () =>
-                                          toggleMinimize(window.id),
-                                      onUpdate: (rect) {
-                                        setState(() {
-                                          if (isMobile &&
-                                              !window.isMaximized &&
-                                              !window.isMinimized) {
-                                            final Rect safe = _getSafeRect(
-                                              desktopSize,
-                                              padding,
-                                              offsetX: _horizontalOffset(),
-                                              offsetY: _verticalOffset(),
-                                            );
-                                            window.rect =
-                                                _fitRectInsideSafeRect(
-                                                  rect,
-                                                  safe,
-                                                );
-                                          } else {
-                                            window.rect = rect;
-                                          }
-                                          _rememberWindowSize(window);
-                                        });
-                                      },
-                                      onDragStart: () =>
-                                          _beginWindowDragGesture(window.id),
-                                      onDragUpdate: (d) => onWindowDragUpdate(
-                                        window.id,
-                                        d,
-                                        desktopSize,
-                                        padding,
-                                      ),
-                                      onDragEnd: () => onWindowDragEnd(
-                                        window.id,
-                                        desktopSize,
-                                        padding,
+                                    return FocusScope(
+                                      key: ValueKey('focus-${window.id}'),
+                                      node: _windowFocusScopes[window.id]!,
+                                      includeSemantics: false,
+                                      descendantsAreFocusable:
+                                          !window.isMinimized,
+                                      child: FastWindow(
+                                        key: ValueKey(window.id),
+                                        window: window,
+                                        renderRect: window.isMaximized
+                                            ? safeRect
+                                            : window.rect,
+                                        desktopSize: desktopSize,
+                                        padding: padding,
+                                        chromeStyle: widget.chromeStyle,
+                                        canvasScale: _backgroundScale,
+                                        onFocus: () => focusWindow(window.id),
+                                        onClose: () => closeWindow(window.id),
+                                        onMaximize: () => toggleMaximize(
+                                          window.id,
+                                          desktopSize,
+                                          padding,
+                                        ),
+                                        onMinimize: () =>
+                                            toggleMinimize(window.id),
+                                        onUpdate: (rect) {
+                                          setState(() {
+                                            if (isMobile &&
+                                                !window.isMaximized &&
+                                                !window.isMinimized) {
+                                              final Rect safe = _getSafeRect(
+                                                desktopSize,
+                                                padding,
+                                                offsetX: _horizontalOffset(),
+                                                offsetY: _verticalOffset(),
+                                              );
+                                              window.rect =
+                                                  _fitRectInsideSafeRect(
+                                                    rect,
+                                                    safe,
+                                                  );
+                                            } else {
+                                              window.rect = rect;
+                                            }
+                                            _rememberWindowSize(window);
+                                          });
+                                        },
+                                        onDragStart: () =>
+                                            _beginWindowDragGesture(window.id),
+                                        onDragUpdate: (d) => onWindowDragUpdate(
+                                          window.id,
+                                          d,
+                                          desktopSize,
+                                          padding,
+                                        ),
+                                        onDragEnd: () => onWindowDragEnd(
+                                          window.id,
+                                          desktopSize,
+                                          padding,
+                                        ),
                                       ),
                                     );
                                   }),
