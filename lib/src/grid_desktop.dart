@@ -1543,6 +1543,10 @@ class _GridDesktopState extends State<GridDesktop>
                         controller: _horizontalScrollController,
                         physics: const NeverScrollableScrollPhysics(),
                         scrollDirection: Axis.horizontal,
+                        // Canvas coordinates always increase toward the
+                        // physical right, even when window content is RTL.
+                        reverse:
+                            Directionality.of(context) == TextDirection.rtl,
                         child: SizedBox(
                           key: _canvasViewportKey,
                           width: canvasWidth,
