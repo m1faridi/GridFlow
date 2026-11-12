@@ -91,6 +91,7 @@ class FakeWindow extends windowing.WindowController {
     if (destroyed) throw StateError('Window has been destroyed.');
     return false;
   }
+
   @override
   bool get isMinimized => false;
   @override
