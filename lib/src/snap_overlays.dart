@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 import 'dart:ui'; // برای استفاده از ImageFilter
-import 'package:flutter/material.dart';
+
+import 'package:material_ui/material_ui.dart';
+
 import 'models.dart';
 
 class SnapPreviewOverlay extends StatelessWidget {
@@ -12,7 +14,7 @@ class SnapPreviewOverlay extends StatelessWidget {
     super.key,
     required this.region,
     required this.screenSize,
-    required this.padding
+    required this.padding,
   });
 
   @override
@@ -26,17 +28,68 @@ class SnapPreviewOverlay extends StatelessWidget {
     const p = 12.0;
 
     switch (region) {
-      case SnapRegion.left: target = Rect.fromLTWH(startX + p, startY + p, hw - 2 * p, h - 2 * p); break;
-      case SnapRegion.right: target = Rect.fromLTWH(startX + hw + p, startY + p, hw - 2 * p, h - 2 * p); break;
-      case SnapRegion.top: target = Rect.fromLTWH(startX + p, startY + p, w - 2 * p, h - 2 * p); break;
-      case SnapRegion.topLeft: target = Rect.fromLTWH(startX + p, startY + p, hw - 2 * p, hh - 2 * p); break;
-      case SnapRegion.topRight: target = Rect.fromLTWH(startX + hw + p, startY + p, hw - 2 * p, hh - 2 * p); break;
-      case SnapRegion.bottomLeft: target = Rect.fromLTWH(startX + p, startY + hh + p, hw - 2 * p, hh - 2 * p); break;
-      case SnapRegion.bottomRight: target = Rect.fromLTWH(startX + hw + p, startY + hh + p, hw - 2 * p, hh - 2 * p); break;
-      case SnapRegion.leftThird: target = Rect.fromLTWH(startX + p, startY + p, tw - 2 * p, h - 2 * p); break;
-      case SnapRegion.centerThird: target = Rect.fromLTWH(startX + tw + p, startY + p, tw - 2 * p, h - 2 * p); break;
-      case SnapRegion.rightThird: target = Rect.fromLTWH(startX + tw * 2 + p, startY + p, tw - 2 * p, h - 2 * p); break;
-      default: target = Rect.zero;
+      case SnapRegion.left:
+        target = Rect.fromLTWH(startX + p, startY + p, hw - 2 * p, h - 2 * p);
+        break;
+      case SnapRegion.right:
+        target = Rect.fromLTWH(
+          startX + hw + p,
+          startY + p,
+          hw - 2 * p,
+          h - 2 * p,
+        );
+        break;
+      case SnapRegion.top:
+        target = Rect.fromLTWH(startX + p, startY + p, w - 2 * p, h - 2 * p);
+        break;
+      case SnapRegion.topLeft:
+        target = Rect.fromLTWH(startX + p, startY + p, hw - 2 * p, hh - 2 * p);
+        break;
+      case SnapRegion.topRight:
+        target = Rect.fromLTWH(
+          startX + hw + p,
+          startY + p,
+          hw - 2 * p,
+          hh - 2 * p,
+        );
+        break;
+      case SnapRegion.bottomLeft:
+        target = Rect.fromLTWH(
+          startX + p,
+          startY + hh + p,
+          hw - 2 * p,
+          hh - 2 * p,
+        );
+        break;
+      case SnapRegion.bottomRight:
+        target = Rect.fromLTWH(
+          startX + hw + p,
+          startY + hh + p,
+          hw - 2 * p,
+          hh - 2 * p,
+        );
+        break;
+      case SnapRegion.leftThird:
+        target = Rect.fromLTWH(startX + p, startY + p, tw - 2 * p, h - 2 * p);
+        break;
+      case SnapRegion.centerThird:
+        target = Rect.fromLTWH(
+          startX + tw + p,
+          startY + p,
+          tw - 2 * p,
+          h - 2 * p,
+        );
+        break;
+      case SnapRegion.rightThird:
+        target = Rect.fromLTWH(
+          startX + tw * 2 + p,
+          startY + p,
+          tw - 2 * p,
+          h - 2 * p,
+        );
+        break;
+      default:
+        target = Rect.zero;
     }
 
     return AnimatedPositioned(
@@ -52,9 +105,14 @@ class SnapPreviewOverlay extends StatelessWidget {
           filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15), // شیشه‌ای روشن برای پیش‌نمایش
+              color: Colors.white.withValues(
+                alpha: 0.15,
+              ), // شیشه‌ای روشن برای پیش‌نمایش
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 1.5),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.4),
+                width: 1.5,
+              ),
             ),
           ),
         ),
@@ -93,7 +151,12 @@ class StaticSnapBar extends StatelessWidget {
       const SizedBox(width: 4, height: 4),
       SnapIcon(Icons.view_week, SnapRegion.centerThird, activeRegion),
       const SizedBox(width: 4, height: 4),
-      SnapIcon(Icons.view_column, SnapRegion.rightThird, activeRegion, rotate: true),
+      SnapIcon(
+        Icons.view_column,
+        SnapRegion.rightThird,
+        activeRegion,
+        rotate: true,
+      ),
 
       Container(
         height: isVertical ? 1 : 24,
@@ -149,7 +212,13 @@ class SnapIcon extends StatelessWidget {
   final SnapRegion activeRegion;
   final bool rotate;
 
-  const SnapIcon(this.icon, this.targetRegion, this.activeRegion, {super.key, this.rotate = false});
+  const SnapIcon(
+    this.icon,
+    this.targetRegion,
+    this.activeRegion, {
+    super.key,
+    this.rotate = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -158,33 +227,41 @@ class SnapIcon extends StatelessWidget {
     // رنگ‌ها برای حالت شیشه‌ای باید کمی زنده‌تر باشند
     final Color activeBg = Colors.white.withValues(alpha: 0.4);
     final Color activeBorder = Colors.white.withValues(alpha: 0.8);
-    final Color inactiveIcon = Colors.black.withValues(alpha: 0.6); // آیکون تیره روی شیشه روشن
+    final Color inactiveIcon = Colors.black.withValues(
+      alpha: 0.6,
+    ); // آیکون تیره روی شیشه روشن
     final Color activeIconColor = Colors.black87;
 
     return AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: isActive ? activeBg : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-              color: isActive ? activeBorder : Colors.transparent,
-              width: 1.5
-          ),
-          // سایه ملایم وقتی انتخاب می‌شود
-          boxShadow: isActive ? [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4, spreadRadius: 1)
-          ] : [],
+      duration: const Duration(milliseconds: 150),
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: isActive ? activeBg : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isActive ? activeBorder : Colors.transparent,
+          width: 1.5,
         ),
-        child: Transform.rotate(
-            angle: rotate ? 3.14 : 0,
-            child: Icon(
-                icon,
-                color: isActive ? activeIconColor : inactiveIcon,
-                size: 22
-            )
-        )
+        // سایه ملایم وقتی انتخاب می‌شود
+        boxShadow: isActive
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 4,
+                  spreadRadius: 1,
+                ),
+              ]
+            : [],
+      ),
+      child: Transform.rotate(
+        angle: rotate ? 3.14 : 0,
+        child: Icon(
+          icon,
+          color: isActive ? activeIconColor : inactiveIcon,
+          size: 22,
+        ),
+      ),
     );
   }
 }

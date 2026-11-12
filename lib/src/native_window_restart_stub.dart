@@ -5,17 +5,17 @@ import 'package:flutter/src/widgets/_window.dart' as windowing;
 void prepareNativeWindowRestart(windowing.WindowingOwner owner) {}
 
 void positionGridWindowToRight(
-  windowing.RegularWindowController controller, {
-  windowing.RegularWindowController? relativeTo,
+  windowing.WindowController controller, {
+  windowing.WindowController? relativeTo,
 }) {}
 
-windowing.RegularWindowController createGridRegularWindow({
+windowing.WindowController createGridWindow({
   required bool launcher,
   required Size size,
   required BoxConstraints constraints,
   required String title,
-  required windowing.RegularWindowControllerDelegate delegate,
-}) => windowing.RegularWindowController(
+  required windowing.WindowControllerDelegate delegate,
+}) => windowing.WindowController(
   size: size,
   constraints: constraints,
   title: title,

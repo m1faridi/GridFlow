@@ -2,13 +2,13 @@
 
 import 'dart:ui' as ui;
 
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/src/foundation/_features.dart' show isWindowingEnabled;
 import 'package:flutter/src/widgets/_window.dart' as windowing;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_flow/grid_os.dart';
-import 'package:grid_flow/src/native_dialog_policy.dart';
 import 'package:grid_flow/src/window_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -44,13 +44,15 @@ class FakeView extends TestFlutterView {
   void updateSemantics(ui.SemanticsUpdate update) {}
 }
 
-class FakeWindow extends windowing.RegularWindowController {
-  final windowing.RegularWindowControllerDelegate delegate;
+class FakeWindow extends windowing.WindowController {
+  final windowing.WindowControllerDelegate delegate;
   @override
   String title;
   @override
   Size contentSize;
   bool destroyed = false;
+  @override
+  bool get isDestroyed => destroyed;
   bool released = false;
   int destroyCount = 0;
 
@@ -112,8 +114,8 @@ class FakeWindowingOwner extends Fake implements windowing.WindowingOwner {
   FakeWindowingOwner(this.tester);
 
   @override
-  windowing.RegularWindowController createRegularWindowController({
-    required windowing.RegularWindowControllerDelegate delegate,
+  windowing.WindowController createWindowController({
+    required windowing.WindowControllerDelegate delegate,
     required bool resizable,
     Size? size,
     BoxConstraints? constraints,
@@ -215,8 +217,8 @@ void main() {
   ) async {
     expect(GridNativeWindows.ensureInitialized(), same(tester.binding));
     expect(GridNativeWindows.ensureInitialized(), same(tester.binding));
-    final owner = tester.binding.windowingOwner as GridDialogWindowingOwner;
-    expect(owner.delegate, same(h.owner));
+    final owner = tester.binding.windowingOwner;
+    expect(owner, same(h.owner));
     GridNativeWindows.ensureInitialized();
     expect(tester.binding.windowingOwner, same(owner));
     final desktop = await h.mount(tester);
@@ -240,6 +242,81 @@ void main() {
     isWindowingEnabled = true;
   });
 
+  for (final kind in ['material', 'adaptive', 'cupertino', 'general']) {
+    windowTest('$kind dialogs stay in their originating native view', (
+      tester,
+      h,
+    ) async {
+      final desktop = await h.mount(tester);
+      Future<String?>? result;
+      Widget dialog(BuildContext context) {
+        expect(View.of(context), same(h.owner.windows.last.rootView));
+        void confirm() => Navigator.of(context).pop('confirmed');
+        return kind == 'cupertino'
+            ? CupertinoAlertDialog(
+                title: const Text('Dialog content'),
+                actions: [
+                  CupertinoDialogAction(
+                    onPressed: confirm,
+                    child: const Text('Confirm'),
+                  ),
+                ],
+              )
+            : AlertDialog(
+                title: const Text('Dialog content'),
+                actions: [
+                  TextButton(onPressed: confirm, child: const Text('Confirm')),
+                ],
+              );
+      }
+
+      final childResult = desktop.openApp(
+        editor(
+          builder: (_) => Builder(
+            builder: (context) => TextButton(
+              onPressed: () {
+                result = switch (kind) {
+                  'material' => showDialog<String>(
+                    context: context,
+                    builder: dialog,
+                  ),
+                  'adaptive' => showAdaptiveDialog<String>(
+                    context: context,
+                    builder: dialog,
+                  ),
+                  'cupertino' => showCupertinoDialog<String>(
+                    context: context,
+                    builder: dialog,
+                  ),
+                  _ => showGeneralDialog<String>(
+                    context: context,
+                    pageBuilder: (context, _, _) => dialog(context),
+                  ),
+                };
+              },
+              child: const Text('Open dialog'),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open dialog'));
+      await tester.pumpAndSettle();
+      expect(find.text('Dialog content'), findsOneWidget);
+      expect(find.byType(ModalBarrier), findsWidgets);
+      expect(h.owner.windows, hasLength(2));
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text('Confirm'));
+      await tester.pumpAndSettle();
+      expect(await result, 'confirmed');
+      expect(find.text('Dialog content'), findsNothing);
+      expect(h.owner.windows.last.destroyed, isFalse);
+      h.owner.windows.last.requestClose();
+      await tester.pumpAndSettle();
+      expect(await childResult, isNull);
+    });
+  }
+
   windowTest(
     'native contentBuilder creates a second view and returns Dart objects',
     (tester, h) async {
@@ -257,7 +334,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(h.owner.windows, hasLength(2));
-      expect(find.byType(windowing.RegularWindow), findsNWidgets(2));
+      expect(find.byType(windowing.Window), findsNWidgets(2));
       expect(find.byType(FastWindow), findsNothing);
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
@@ -553,7 +630,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(await result, 'immediate');
-    expect(find.byType(windowing.RegularWindow), findsOneWidget);
+    expect(find.byType(windowing.Window), findsOneWidget);
     expect(h.owner.windows.last.released, isTrue);
   });
 

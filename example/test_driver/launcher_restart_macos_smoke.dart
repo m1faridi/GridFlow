@@ -7,7 +7,7 @@ import 'dart:convert';
 import 'dart:ffi' hide Size;
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/src/widgets/_window.dart' as windowing;
 import 'package:flutter/src/widgets/_window_macos.dart' as macos;
 import 'package:grid_flow/grid_os.dart';
@@ -40,7 +40,7 @@ class _ProbeState extends State<_Probe> {
     await Future<void>.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
     final controller =
-        windowing.WindowScope.of(context) as macos.RegularWindowControllerMacOS;
+        windowing.WindowScope.of(context) as macos.WindowControllerMacOS;
     final handle = controller.windowHandle;
     var generation = 0;
     if (await _expected.exists()) {
@@ -182,5 +182,8 @@ void _resignKey(Pointer<Void> window) {
   final selector = _selector('resignKeyWindow');
   _method(_classFor(window), selector)
       .cast<NativeFunction<Void Function(Pointer<Void>, Pointer<Void>)>>()
-      .asFunction<void Function(Pointer<Void>, Pointer<Void>)>()(window, selector);
+      .asFunction<void Function(Pointer<Void>, Pointer<Void>)>()(
+    window,
+    selector,
+  );
 }

@@ -1,12 +1,12 @@
 // Flutter's experimental windowing API is intentionally isolated in this file.
-// Targets Flutter 3.47.5 stable; internal names may change between SDK releases.
+// Targets Flutter 3.50.0 stable; internal names may change between SDK releases.
 // ignore_for_file: implementation_imports, invalid_use_of_internal_member
 
 import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/src/foundation/_features.dart' show isWindowingEnabled;
@@ -14,7 +14,6 @@ import 'package:flutter/src/widgets/_window.dart' as windowing;
 
 import 'desktop_controller.dart';
 import 'models.dart';
-import 'native_dialog_policy.dart';
 import 'native_window_restart_stub.dart'
     if (dart.library.io) 'native_window_restart_windows.dart';
 import 'window_content.dart';
@@ -57,7 +56,7 @@ class GridNativeWindows {
   /// Whether Flutter windowing is initialized on a desktop platform.
   static bool get isSupported => _isDesktop && isWindowingEnabled;
 
-  /// Initializes the experimental API bundled with Flutter 3.47.5 stable.
+  /// Initializes the experimental API bundled with Flutter 3.50.0 stable.
   ///
   /// That SDK's CLI ignores enable-windowing on stable. Opt in here and replace
   /// the unsupported owner installed by an earlier ensureInitialized call.
@@ -73,11 +72,6 @@ class GridNativeWindows {
         isWindowingEnabled = false;
         rethrow;
       }
-    }
-    if (_isDesktop &&
-        isWindowingEnabled &&
-        binding.windowingOwner is! GridDialogWindowingOwner) {
-      binding.windowingOwner = GridDialogWindowingOwner(binding.windowingOwner);
     }
     if (_isDesktop && isWindowingEnabled) {
       prepareNativeWindowRestart(binding.windowingOwner);
@@ -225,7 +219,7 @@ class _GridNativeWindowHostState extends State<GridNativeWindowHost> {
       views: [
         for (final entry in _runtime.windows)
           if (!entry.closing)
-            windowing.RegularWindow(
+            windowing.Window(
               key: ValueKey(entry.id),
               controller: entry.controller,
               child: entry.child,
@@ -242,7 +236,7 @@ class _NativeWindow {
   Size? normalSize;
   final bool isClosable;
   final Completer<dynamic>? result;
-  late final windowing.RegularWindowController controller;
+  late final windowing.WindowController controller;
   Widget child;
   bool closing = false;
   bool destroyed = false;
@@ -258,14 +252,14 @@ class _NativeWindow {
   });
 }
 
-class _WindowDelegate with windowing.RegularWindowControllerDelegate {
+class _WindowDelegate with windowing.WindowControllerDelegate {
   final VoidCallback onClose;
   final VoidCallback onDestroyed;
 
   _WindowDelegate({required this.onClose, required this.onDestroyed});
 
   @override
-  void onWindowCloseRequested(windowing.RegularWindowController controller) =>
+  void onWindowCloseRequested(windowing.WindowController controller) =>
       onClose();
 
   @override
@@ -302,7 +296,7 @@ class _NativeRuntime extends ChangeNotifier implements DesktopController {
     String? parentId,
   }) {
     _validateSize(size);
-    entry.controller = createGridRegularWindow(
+    entry.controller = createGridWindow(
       launcher: entry.id == 'grid-flow-launcher',
       title: title,
       size: size,

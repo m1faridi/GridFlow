@@ -1,7 +1,7 @@
 import 'dart:math';
 
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:grid_flow/grid_os.dart';
 
 class MyApp2 extends StatefulWidget {
@@ -94,7 +94,6 @@ class _MyApp2State extends State<MyApp2> {
     Color(0xFF94A3B8),
   ];
 
-
   late Color _themeColor;
   late String _title;
   late String _subtitle;
@@ -128,7 +127,8 @@ class _MyApp2State extends State<MyApp2> {
     final desktop = DesktopProvider.of(context);
     if (desktop == null) return;
 
-    final childTitle = '${_titles[_random.nextInt(_titles.length)]} ${100 + _random.nextInt(900)}';
+    final childTitle =
+        '${_titles[_random.nextInt(_titles.length)]} ${100 + _random.nextInt(900)}';
     final childColor = _palette[_random.nextInt(_palette.length)];
 
     final result = await desktop.openApp(
@@ -170,7 +170,9 @@ class _MyApp2State extends State<MyApp2> {
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.16),
+                  ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -195,7 +197,10 @@ class _MyApp2State extends State<MyApp2> {
                       children: [
                         ElevatedButton.icon(
                           onPressed: _openWindow,
-                          icon: const Icon(CupertinoIcons.add_circled, size: 18),
+                          icon: const Icon(
+                            CupertinoIcons.add_circled,
+                            size: 18,
+                          ),
                           label: const Text('Open New Window'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _themeColor,
@@ -209,13 +214,17 @@ class _MyApp2State extends State<MyApp2> {
                           label: const Text('Regenerate'),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.white,
-                            side: BorderSide(color: Colors.white.withValues(alpha: 0.35)),
+                            side: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.35),
+                            ),
                           ),
                         ),
                         const Spacer(),
                         Text(
                           '${_entries.length} items',
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.75),
+                          ),
                         ),
                       ],
                     ),
@@ -234,7 +243,9 @@ class _MyApp2State extends State<MyApp2> {
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.06),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.14),
+                        ),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -242,9 +253,14 @@ class _MyApp2State extends State<MyApp2> {
                           Row(
                             children: [
                               Icon(
-                                item.healthy ? CupertinoIcons.checkmark_circle_fill : CupertinoIcons.exclamationmark_triangle_fill,
+                                item.healthy
+                                    ? CupertinoIcons.checkmark_circle_fill
+                                    : CupertinoIcons
+                                          .exclamationmark_triangle_fill,
                                 size: 16,
-                                color: item.healthy ? const Color(0xFF22C55E) : const Color(0xFFF59E0B),
+                                color: item.healthy
+                                    ? const Color(0xFF22C55E)
+                                    : const Color(0xFFF59E0B),
                               ),
                               const SizedBox(width: 6),
                               Expanded(
@@ -258,14 +274,18 @@ class _MyApp2State extends State<MyApp2> {
                               ),
                               Text(
                                 '${item.progress}%',
-                                style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.8),
+                                ),
                               ),
                             ],
                           ),
                           const SizedBox(height: 6),
                           Text(
                             item.description,
-                            style: TextStyle(color: Colors.white.withValues(alpha: 0.74)),
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.74),
+                            ),
                           ),
                           const SizedBox(height: 8),
                           ClipRRect(
@@ -273,8 +293,12 @@ class _MyApp2State extends State<MyApp2> {
                             child: LinearProgressIndicator(
                               minHeight: 8,
                               value: item.progress / 100,
-                              backgroundColor: Colors.white.withValues(alpha: 0.12),
-                              valueColor: AlwaysStoppedAnimation<Color>(_themeColor),
+                              backgroundColor: Colors.white.withValues(
+                                alpha: 0.12,
+                              ),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                _themeColor,
+                              ),
                             ),
                           ),
                         ],
@@ -287,10 +311,8 @@ class _MyApp2State extends State<MyApp2> {
                 alignment: Alignment.centerRight,
                 child: TextButton.icon(
                   onPressed: () {
-                    DesktopProvider.of(context)?.closeApp({
-                      'title': _title,
-                      'items': _entries.length,
-                    });
+                    DesktopProvider.of(context)
+                        ?.closeApp({'title': _title, 'items': _entries.length});
                   },
                   icon: const Icon(CupertinoIcons.check_mark_circled),
                   label: const Text('Close & Return Result'),

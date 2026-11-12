@@ -1,8 +1,8 @@
-// Run with Flutter 3.47.5 stable: flutter run -d macos -t test_driver/windowing_smoke.dart
+// Run with Flutter 3.50.0 stable: flutter run -d macos -t test_driver/windowing_smoke.dart
 import 'dart:async';
 import 'dart:ui' show AppExitType;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:grid_flow/grid_os.dart';
 

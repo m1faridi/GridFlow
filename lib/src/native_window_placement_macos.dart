@@ -1,4 +1,4 @@
-// Adapter for Flutter 3.47.5's experimental macOS window controllers.
+// Adapter for Flutter 3.50.0's experimental macOS window controllers.
 // ignore_for_file: implementation_imports, invalid_use_of_internal_member
 import 'dart:ffi' hide Size;
 import 'dart:math' as math;
@@ -14,20 +14,20 @@ import 'native_window_placement.dart';
 /// launcher NSWindow alive natively so its final frame is available to the next
 /// isolate, without retaining Dart callbacks or changing cold-start placement.
 void restoreGridLauncherAfterRestartMacOS(
-  windowing.RegularWindowController controller,
+  windowing.WindowController controller,
 ) {
-  if (!kDebugMode || controller is! macos.RegularWindowControllerMacOS) return;
+  if (!kDebugMode || controller is! macos.WindowControllerMacOS) return;
   final engineId = WidgetsBinding.instance.platformDispatcher.engineId;
   if (engineId == null) return;
   _AppKitPlacementApi().restoreLauncherFrame(controller.windowHandle, engineId);
 }
 
 void positionGridWindowToRightMacOS(
-  windowing.RegularWindowController controller, {
-  windowing.RegularWindowController? relativeTo,
+  windowing.WindowController controller, {
+  windowing.WindowController? relativeTo,
 }) {
-  if (controller is! macos.RegularWindowControllerMacOS ||
-      relativeTo is! macos.RegularWindowControllerMacOS) {
+  if (controller is! macos.WindowControllerMacOS ||
+      relativeTo is! macos.WindowControllerMacOS) {
     return;
   }
   final handle = controller.windowHandle;

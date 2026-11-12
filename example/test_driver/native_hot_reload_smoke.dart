@@ -3,7 +3,7 @@
 // Each reload must print GRIDFLOW_RELOAD_OK and keep all three native views.
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:grid_flow/grid_os.dart';
 
 String get revision => 'revision 1';

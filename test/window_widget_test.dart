@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_flow/src/models.dart';
 import 'package:grid_flow/src/window_widget.dart';

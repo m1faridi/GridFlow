@@ -5,7 +5,7 @@ import 'dart:async';
 import 'dart:ffi' hide Size;
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/src/widgets/_window_macos.dart' as macos;
 import 'package:grid_flow/grid_os.dart';

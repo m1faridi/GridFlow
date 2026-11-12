@@ -1,4 +1,4 @@
-// Adapter for Flutter 3.47.5's experimental Windows window controllers.
+// Adapter for Flutter 3.50.0's experimental Windows window controllers.
 // ignore_for_file: implementation_imports, invalid_use_of_internal_member
 import 'dart:ffi' hide Size;
 import 'dart:ui' show FlutterView;
@@ -10,7 +10,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/src/widgets/_window.dart' as windowing;
 import 'package:flutter/src/widgets/_window_win32.dart' as win32;
 
-import 'native_dialog_policy.dart';
 import 'native_window_placement.dart';
 import 'native_window_placement_macos.dart';
 
@@ -20,25 +19,23 @@ _RestartLauncher? _previousLauncher;
 /// Open beside the right edge of the requesting window.
 /// This also runs in release builds, independently of restart.
 void positionGridWindowToRight(
-  windowing.RegularWindowController controller, {
-  windowing.RegularWindowController? relativeTo,
+  windowing.WindowController controller, {
+  windowing.WindowController? relativeTo,
 }) {
   if (Platform.isMacOS) {
     positionGridWindowToRightMacOS(controller, relativeTo: relativeTo);
     return;
   }
-  if (!Platform.isWindows ||
-      controller is! win32.RegularWindowControllerWin32) {
+  if (!Platform.isWindows || controller is! win32.WindowControllerWin32) {
     return;
   }
-  var owner = WidgetsBinding.instance.windowingOwner;
-  if (owner is GridDialogWindowingOwner) owner = owner.delegate;
+  final owner = WidgetsBinding.instance.windowingOwner;
   if (owner is! win32.WindowingOwnerWin32) return;
-  final anchor = relativeTo is win32.RegularWindowControllerWin32
+  final anchor = relativeTo is win32.WindowControllerWin32
       ? relativeTo.windowHandle
       : controller.windowHandle;
   final api = _WindowPlacementApi(owner.allocator);
-  if (relativeTo is win32.RegularWindowControllerWin32) {
+  if (relativeTo is win32.WindowControllerWin32) {
     api.moveToRight(controller, anchor, relativeTo.rootView.devicePixelRatio);
   }
 }
@@ -97,7 +94,7 @@ class _WindowPlacementApi {
       >('SetWindowPos');
 
   void moveToRight(
-    win32.RegularWindowControllerWin32 controller,
+    win32.WindowControllerWin32 controller,
     Pointer<Void> anchor,
     double anchorScale,
   ) {
@@ -162,7 +159,6 @@ class _WindowPlacementApi {
 
 win32.WindowingOwnerWin32? _windowsOwner(windowing.WindowingOwner owner) {
   if (!kDebugMode || !Platform.isWindows) return null;
-  if (owner is GridDialogWindowingOwner) owner = owner.delegate;
   return owner is win32.WindowingOwnerWin32 ? owner : null;
 }
 
@@ -194,7 +190,7 @@ void prepareNativeWindowRestart(windowing.WindowingOwner owner) {
       final controller = _ReattachedController(
         existing: view,
         owner: windowsOwner,
-        delegate: windowing.RegularWindowControllerDelegate(),
+        delegate: windowing.WindowControllerDelegate(),
         size: const Size(200, 150),
         constraints: const BoxConstraints(),
         title: '',
@@ -205,16 +201,16 @@ void prepareNativeWindowRestart(windowing.WindowingOwner owner) {
   }
 }
 
-windowing.RegularWindowController createGridRegularWindow({
+windowing.WindowController createGridWindow({
   required bool launcher,
   required Size size,
   required BoxConstraints constraints,
   required String title,
-  required windowing.RegularWindowControllerDelegate delegate,
+  required windowing.WindowControllerDelegate delegate,
 }) {
   final owner = _windowsOwner(WidgetsBinding.instance.windowingOwner);
   if (owner == null) {
-    final controller = windowing.RegularWindowController(
+    final controller = windowing.WindowController(
       size: size,
       constraints: constraints,
       title: title,
@@ -228,7 +224,7 @@ windowing.RegularWindowController createGridRegularWindow({
   final previous = launcher ? _previousLauncher : null;
   if (launcher) _previousLauncher = null;
   final controller = previous == null
-      ? win32.RegularWindowControllerWin32(
+      ? win32.WindowControllerWin32(
           owner: owner,
           delegate: delegate,
           size: size,
@@ -253,10 +249,10 @@ class _RestartLauncher {
   final _RestartDelegate forwarding;
 }
 
-class _RestartDelegate with windowing.RegularWindowControllerDelegate {
-  windowing.RegularWindowControllerDelegate? target;
+class _RestartDelegate with windowing.WindowControllerDelegate {
+  windowing.WindowControllerDelegate? target;
   @override
-  void onWindowCloseRequested(windowing.RegularWindowController controller) =>
+  void onWindowCloseRequested(windowing.WindowController controller) =>
       target?.onWindowCloseRequested(controller);
   @override
   void onWindowDestroyed() => target?.onWindowDestroyed();
@@ -266,7 +262,7 @@ class _RestartDelegate with windowing.RegularWindowControllerDelegate {
 /// the current isolate's message handler, then redirect that handler to the
 /// retained view and release the unused temporary view. Keeping the original
 /// launcher also preserves its HWND, position and size across hot restart.
-class _ReattachedController extends win32.RegularWindowControllerWin32 {
+class _ReattachedController extends win32.WindowControllerWin32 {
   _ReattachedController({
     required FlutterView existing,
     required win32.WindowingOwnerWin32 owner,

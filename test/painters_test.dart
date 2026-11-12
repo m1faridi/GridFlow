@@ -1,6 +1,6 @@
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_flow/src/models.dart';
 import 'package:grid_flow/src/painters.dart';
@@ -87,51 +87,48 @@ void main() {
     },
   );
 
-  test(
-    'static connections reuse geometry and keep dash positions across paints and builds',
-    () {
-      final windows = [
-        _window('a', const Rect.fromLTWH(0, 0, 100, 100)),
-        _window('b', const Rect.fromLTWH(400, 200, 100, 100)),
-      ];
-      final first = ConnectionsPainter(windows);
-      final firstCanvas = _RecordingCanvas();
-      first.paint(firstCanvas, const Size(800, 600));
-      first.paint(firstCanvas, const Size(800, 600));
-      expect(firstCanvas.paths, hasLength(4));
-      expect(identical(firstCanvas.paths[0], firstCanvas.paths[2]), isTrue);
-      expect(identical(firstCanvas.paths[1], firstCanvas.paths[3]), isTrue);
-      final firstDashes = firstCanvas.paths[1].computeMetrics().toList();
-      final repeatedDashes = firstCanvas.paths[3].computeMetrics().toList();
-      expect(repeatedDashes.length, firstDashes.length);
-      for (var i = 0; i < firstDashes.length; i++) {
-        expect(repeatedDashes[i].length, firstDashes[i].length);
-        expect(
-          repeatedDashes[i].getTangentForOffset(0)!.position,
-          firstDashes[i].getTangentForOffset(0)!.position,
-        );
-      }
-
-      windows.first.title = 'Renamed';
-      final second = ConnectionsPainter(
-        windows,
-        previousPainter: first,
-        viewport: const Rect.fromLTWH(0, 0, 800, 600),
+  test('static connections reuse geometry and keep dash positions across paints and builds', () {
+    final windows = [
+      _window('a', const Rect.fromLTWH(0, 0, 100, 100)),
+      _window('b', const Rect.fromLTWH(400, 200, 100, 100)),
+    ];
+    final first = ConnectionsPainter(windows);
+    final firstCanvas = _RecordingCanvas();
+    first.paint(firstCanvas, const Size(800, 600));
+    first.paint(firstCanvas, const Size(800, 600));
+    expect(firstCanvas.paths, hasLength(4));
+    expect(identical(firstCanvas.paths[0], firstCanvas.paths[2]), isTrue);
+    expect(identical(firstCanvas.paths[1], firstCanvas.paths[3]), isTrue);
+    final firstDashes = firstCanvas.paths[1].computeMetrics().toList();
+    final repeatedDashes = firstCanvas.paths[3].computeMetrics().toList();
+    expect(repeatedDashes.length, firstDashes.length);
+    for (var i = 0; i < firstDashes.length; i++) {
+      expect(repeatedDashes[i].length, firstDashes[i].length);
+      expect(
+        repeatedDashes[i].getTangentForOffset(0)!.position,
+        firstDashes[i].getTangentForOffset(0)!.position,
       );
-      final secondCanvas = _RecordingCanvas();
-      second.paint(secondCanvas, const Size(800, 600));
-      expect(identical(firstCanvas.paths[0], secondCanvas.paths[0]), isTrue);
+    }
 
-      final equivalent = ConnectionsPainter(windows);
-      expect(equivalent.shouldRepaint(first), isFalse);
-      windows.first.rect = const Rect.fromLTWH(10, 10, 100, 100);
-      final moved = ConnectionsPainter(windows, previousPainter: first);
-      expect(moved.shouldRepaint(first), isTrue);
-      final movedCanvas = _RecordingCanvas();
-      moved.paint(movedCanvas, const Size(800, 600));
-      expect(identical(firstCanvas.paths[0], movedCanvas.paths[0]), isFalse);
-    },
-  );
+    windows.first.title = 'Renamed';
+    final second = ConnectionsPainter(
+      windows,
+      previousPainter: first,
+      viewport: const Rect.fromLTWH(0, 0, 800, 600),
+    );
+    final secondCanvas = _RecordingCanvas();
+    second.paint(secondCanvas, const Size(800, 600));
+    expect(identical(firstCanvas.paths[0], secondCanvas.paths[0]), isTrue);
+
+    final equivalent = ConnectionsPainter(windows);
+    expect(equivalent.shouldRepaint(first), isFalse);
+    windows.first.rect = const Rect.fromLTWH(10, 10, 100, 100);
+    final moved = ConnectionsPainter(windows, previousPainter: first);
+    expect(moved.shouldRepaint(first), isTrue);
+    final movedCanvas = _RecordingCanvas();
+    moved.paint(movedCanvas, const Size(800, 600));
+    expect(identical(firstCanvas.paths[0], movedCanvas.paths[0]), isFalse);
+  });
 
   test('color changes invalidate cached connection geometry', () {
     final windows = [

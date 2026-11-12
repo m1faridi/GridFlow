@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// سبک ظاهری دکمه‌های کنترل پنجره (بستن/کمینه/بیشینه).
 enum WindowChromeStyle {
@@ -131,10 +131,8 @@ class _WindowsCaptionButtonState extends State<_WindowsCaptionButton> {
   void _handlePointerUp(PointerUpEvent event) {
     final bool wasPressed = _pressed;
     if (_pressed) setState(() => _pressed = false);
-    final bool insideBounds =
-        (Offset.zero & Size(_width, widget.height)).contains(
-      event.localPosition,
-    );
+    final bool insideBounds = (Offset.zero & Size(_width, widget.height))
+        .contains(event.localPosition);
     if (wasPressed && insideBounds) widget.onPressed();
   }
 
@@ -399,10 +397,8 @@ class _TrafficLightButtonState extends State<_TrafficLightButton> {
   void _handlePointerUp(PointerUpEvent event) {
     final bool wasPressed = _pressed;
     if (_pressed) setState(() => _pressed = false);
-    final bool insideBounds =
-        (Offset.zero & Size(_hitWidth, widget.height)).contains(
-      event.localPosition,
-    );
+    final bool insideBounds = (Offset.zero & Size(_hitWidth, widget.height))
+        .contains(event.localPosition);
     if (wasPressed && insideBounds && widget.enabled) widget.onPressed();
   }
 
