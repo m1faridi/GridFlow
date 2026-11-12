@@ -333,7 +333,10 @@ class _NativeRuntime extends ChangeNotifier implements DesktopController {
   void _rememberWindowSize(_NativeWindow entry) {
     if (entry.destroyed || entry.sizeStorageKey == null) return;
     final controller = entry.controller;
-    if (controller.isMaximized ||
+    // Flutter 3.50 notifies listeners after destroying the native window but
+    // before calling the delegate. Its size/state getters already throw then.
+    if (controller.isDestroyed ||
+        controller.isMaximized ||
         controller.isMinimized ||
         controller.isFullscreen) {
       return;

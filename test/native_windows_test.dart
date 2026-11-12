@@ -73,6 +73,8 @@ class FakeWindow extends windowing.WindowController {
     if (destroyed) return;
     destroyed = true;
     destroyCount++;
+    // Match Flutter 3.50's native destruction notification order.
+    notifyListeners();
     delegate.onWindowDestroyed();
   }
 
@@ -85,7 +87,10 @@ class FakeWindow extends windowing.WindowController {
   @override
   bool get isActivated => true;
   @override
-  bool get isMaximized => false;
+  bool get isMaximized {
+    if (destroyed) throw StateError('Window has been destroyed.');
+    return false;
+  }
   @override
   bool get isMinimized => false;
   @override
@@ -601,13 +606,14 @@ void main() {
   });
 
   windowTest(
-    'platform destruction resolves the pending result and releases the controller',
+    'destruction notifications skip size reads and release the controller',
     (tester, h) async {
       final desktop = await h.mount(tester);
       final result = desktop.openApp(editor());
       await tester.pumpAndSettle();
       h.owner.windows.last.destroy();
       await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
       expect(await result, isNull);
       expect(h.owner.windows.last.released, isTrue);
     },

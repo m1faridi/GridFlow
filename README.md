@@ -67,6 +67,8 @@ dependencies:
   grid_flow:
     git:
       url: https://github.com/m1faridi/GridFlow.git
+  material_ui: ^1.11.0
+  cupertino_ui: ^1.1.6 # If using Cupertino widgets or icons.
 ```
 
 Then run:
@@ -103,25 +105,30 @@ Use distinct keys for different page types. Canvas and native sizes
 are stored separately. Minimizing, maximizing and fullscreen do not overwrite
 the normal size. Restored windows are fitted to the available space.
 
-GridFlow uses Flutter's own `RegularWindowController`, `RegularWindow`, `ViewCollection` and
+GridFlow uses Flutter's own `WindowController`, `Window`, `ViewCollection` and
 `runWidget` APIs. All windows run in **one Flutter engine and Dart isolate**.
 This follows [Flutter's desktop windowing introduction](https://flutter.dev/blog/desktop-windowing-apis).
 
 ### SDK and setup
 
-Use the existing **Flutter 3.47.5 stable** SDK (Dart 3.13.4). No channel switch or
-SDK upgrade is needed. This version bundles the experimental API under the
-`RegularWindowController` / `RegularWindow` names. The article uses names from a
-newer main revision; this integration intentionally targets the installed SDK.
+Requires **Flutter 3.50.0 stable or newer** and **Dart 3.14.0 or newer**. The package
+and example target the renamed `WindowController` / `Window` APIs in Flutter
+3.50.0. Material and Cupertino imports use the official standalone `material_ui`
+and `cupertino_ui` packages, replacing the deprecated SDK libraries.
+
+Flutter's [3.50 release announcement](https://flutter.dev/blog/whats-new-in-flutter-3-50)
+still describes desktop windowing as experimental. The SDK includes these APIs,
+but they remain internal and are not yet stable production APIs.
 
 ```bash
+flutter upgrade
 cd example
 flutter pub get
 flutter run -d macos
 # Or: flutter run -d windows
 ```
 
-On this stable SDK, `flutter config --enable-windowing` and the equivalent
+On Flutter 3.50.0 stable, `flutter config --enable-windowing` and the equivalent
 pubspec setting do not enable the API. `GridNativeWindows.ensureInitialized()`
 opts in through Flutter's internal runtime flag and installs the native
 windowing owner. `GridNativeWindows.run(...)` calls it automatically, and it
@@ -285,8 +292,8 @@ GridDesktop(
 Any window can spawn new windows dynamically using `DesktopProvider`:
 
 ```dart
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:material_ui/material_ui.dart';
 
 class MyApp2 extends StatelessWidget {
   const MyApp2({super.key});
@@ -373,13 +380,12 @@ standard Flutter APIs; no application-level replacements are needed. Modal
 barriers, themes, navigator selection, and returned results are preserved.
 `GridNativeWindows.openApp` still opens independent native windows.
 
-This policy is installed by `GridNativeWindows.ensureInitialized`, including
-when called by `run` or `GridNativeWindowHost`. It delegates ordinary window
-creation to Flutter and uses Flutter 3.47.5's unsupported-native-dialog fallback
-for dialogs. Only the exact internal fallback signal is consumed; unrelated
-Flutter errors are forwarded unchanged. Direct native `DialogWindowController`
-creation is unsupported under this policy. The experimental Flutter APIs used
+Flutter 3.50.0's `showRawDialog` pushes a navigator route directly. GridFlow no
+longer replaces the windowing owner or intercepts Flutter errors to keep dialogs
+in their originating window. Explicit native `DialogWindowController` usage is
+handled by Flutter's own windowing owner. The experimental Flutter APIs used
 here should be rechecked on SDK upgrades.
+
 ### Hot reload
 
 Hot reload refreshes `DesktopApp.contentBuilder`, registered native builders and
@@ -418,7 +424,7 @@ or disabling App Sandbox. See [Apple's macOS 27 release notes](https://developer
 
 ### macOS hot restart
 
-Flutter 3.47.5 closes its native macOS windows when the Dart isolate restarts.
+Flutter 3.50.0 closes its native macOS windows when the Dart isolate restarts.
 In debug builds GridFlow retains the launcher's last native frame and restores
 its position and size on the replacement launcher in the same engine session.
 Cold starts keep the application's normal startup sizing and placement. Dart
@@ -437,7 +443,7 @@ next restart must restore the most recent geometry.
 
 ### Windows hot restart
 
-On Flutter 3.47.5, native windows survive a Dart hot restart. In Windows debug
+On Flutter 3.50.0, native windows survive a Dart hot restart. In Windows debug
 sessions GridFlow now marks its own windows, reattaches the existing launcher to
 the new isolate, and retires children from the previous isolate. The launcher
 keeps its native window, position, and size; Dart application state still resets
